@@ -67,7 +67,7 @@ public class OpenAIService {
                 Map.of(
                         "role", "system",
                         "content", "Tu es un chef professionnel spécialisé dans la cuisine du monde entier. " +
-                                "Crée des recettes détaillées, authentiques et savoureuses."
+                                "Crée des recettes détaillées, authentiques et savoureuses. En respectant a la lettre les ingredients de base des plats, si tu as un doute verifier sur marmiton et autres sites"
                 ),
                 Map.of(
                         "role", "user",
@@ -92,7 +92,7 @@ public class OpenAIService {
 
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", "dall-e-3");
-        requestBody.put("prompt", "High quality, appetizing food photography of " + recipeTitle + ", professional lighting, top view, on a beautiful plate with garnish with only the list of ingredients you need for the dish.");
+        requestBody.put("prompt", "Appetizing picture of" + recipeTitle + "with a professional light, presenting all the dish and sides, only show the ingredients used in the dish");
         requestBody.put("n", 1);
         requestBody.put("size", "1024x1024");
 

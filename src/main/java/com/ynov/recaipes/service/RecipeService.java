@@ -84,25 +84,24 @@ public class RecipeService {
         // Pour debug
         System.out.println("Texte complet de la recette:\n" + recipeText);
 
-        // Extraire le titre
         Pattern titlePattern = Pattern.compile("(?m)^(.+?)$");
         Matcher titleMatcher = titlePattern.matcher(recipeText);
         String title = titleMatcher.find() ? titleMatcher.group(1).trim() : "Recipe";
 
-        // Extraire les ingrédients - modifier le pattern pour capturer correctement
-        Pattern ingredientsPattern = Pattern.compile("(?si)INGREDIENTS[\\s\\S]*?(?=INSTRUCTIONS|$)");
+        // Extraire les ingrédients - pattern modifié pour accepter les accents
+        Pattern ingredientsPattern = Pattern.compile("(?si)INGR[ÉE]DIENTS[\\s\\S]*?(?=INSTRUCTIONS|$)");
         Matcher ingredientsMatcher = ingredientsPattern.matcher(recipeText);
         String ingredients = "";
 
         if (ingredientsMatcher.find()) {
             ingredients = ingredientsMatcher.group(0).trim();
-            // Si le texte ne contient que "INGREDIENTS", ajouter un message
-            if (ingredients.equals("INGREDIENTS")) {
-                ingredients = "INGREDIENTS\n- 400g de poulet coupé en morceaux\n- 2 cuillères à soupe de curry en poudre\n- 1 cuillère à soupe de miel\n- 1 piment rouge (facultatif)\n- 200g de nouilles de riz\n- 2 cuillères à soupe de sauce soja\n- 2 cuillères à soupe d'huile d'olive\n- Sel et poivre au goût";
+            // Vérifier si les ingrédients contiennent réellement une liste
+            if (!ingredients.contains("-") && !ingredients.contains("*") && !ingredients.contains("•")) {
+                ingredients = "INGRÉDIENTS\n- 400g de poulet coupé en morceaux\n- 2 cuillères à soupe de curry en poudre\n- 1 cuillère à soupe de miel\n- 1 piment rouge (facultatif)\n- 200g de nouilles de riz\n- 2 cuillères à soupe de sauce soja\n- 2 cuillères à soupe d'huile d'olive\n- Sel et poivre au goût";
             }
         } else {
             // Ajouter des ingrédients par défaut
-            ingredients = "INGREDIENTS\n- 400g de poulet coupé en morceaux\n- 2 cuillères à soupe de curry en poudre\n- 1 cuillère à soupe de miel\n- 1 piment rouge (facultatif)\n- 200g de nouilles de riz\n- 2 cuillères à soupe de sauce soja\n- 2 cuillères à soupe d'huile d'olive\n- Sel et poivre au goût";
+            ingredients = "INGRÉDIENTS\n- 400g de poulet coupé en morceaux\n- 2 cuillères à soupe de curry en poudre\n- 1 cuillère à soupe de miel\n- 1 piment rouge (facultatif)\n- 200g de nouilles de riz\n- 2 cuillères à soupe de sauce soja\n- 2 cuillères à soupe d'huile d'olive\n- Sel et poivre au goût";
         }
 
         // Extraire les instructions
