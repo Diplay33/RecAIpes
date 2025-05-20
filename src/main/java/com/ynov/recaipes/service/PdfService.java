@@ -1,15 +1,15 @@
 package com.ynov.recaipes.service;
 
+import com.ynov.recaipes.model.PdfMetadata;
+import com.ynov.recaipes.model.Recipe;
+import com.ynov.recaipes.repository.PdfMetadataRepository;
+import lombok.RequiredArgsConstructor;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
-import com.ynov.recaipes.model.Recipe;
-import com.ynov.recaipes.model.PdfMetadata;
-import com.ynov.recaipes.repository.PdfMetadataRepository;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -18,8 +18,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -27,125 +25,283 @@ public class PdfService {
     private final PdfMetadataRepository pdfMetadataRepository;
     private final StorageService storageService;
 
+    // Constantes pour la mise en page
+    private static final float MARGIN = 50;
+    private static final float PAGE_WIDTH = PDRectangle.A4.getWidth();
+    private static final float PAGE_HEIGHT = PDRectangle.A4.getHeight();
+    private static final float TEXT_WIDTH = PAGE_WIDTH - (2 * MARGIN);
+    private static final float TOP_MARGIN = PAGE_HEIGHT - MARGIN;
+    private static final float BOTTOM_MARGIN = MARGIN + 30;
+    private static final PDType1Font TITLE_FONT = PDType1Font.HELVETICA_BOLD;
+    private static final PDType1Font SECTION_FONT = PDType1Font.HELVETICA_BOLD;
+    private static final PDType1Font TEXT_FONT = PDType1Font.HELVETICA;
+    private static final float TITLE_SIZE = 24;
+    private static final float SECTION_SIZE = 16;
+    private static final float TEXT_SIZE = 12;
+    private static final float LINE_SPACING = 1.5f;
+
     @Value("${pdf.storage.local.path}")
     private String localStoragePath;
 
-    // Creates a PDF document from recipe data, saves it locally and to S3,
-    // then records the metadata in the database
+    // Classe pour stocker l'état de la génération PDF
+    private static class PdfState {
+        PDDocument document;
+        PDPageContentStream contentStream;
+        PDPage currentPage;
+        float yPosition;
+    }
+
     public PdfMetadata generateAndSavePdf(Recipe recipe) throws IOException {
-        // Ensure storage directory exists
+        // Préparer le dossier de stockage
         Path localPath = Paths.get(localStoragePath);
         if (!Files.exists(localPath)) {
             Files.createDirectories(localPath);
         }
 
-        // Create PDF with recipe content
+        // Préparer le fichier PDF
         String fileName = "recipe_" + recipe.getId() + ".pdf";
         String filePath = localStoragePath + File.separator + fileName;
 
-        PDDocument document = new PDDocument();
-        PDPage page = new PDPage(PDRectangle.A4);
-        document.addPage(page);
+        // Créer l'état initial du PDF
+        PdfState state = new PdfState();
+        state.document = new PDDocument();
+        state.currentPage = new PDPage(PDRectangle.A4);
+        state.document.addPage(state.currentPage);
+        state.contentStream = new PDPageContentStream(state.document, state.currentPage);
+        state.yPosition = TOP_MARGIN;
 
-        PDPageContentStream contentStream = new PDPageContentStream(document, page);
+        try {
+            // Traiter le titre
+            String title = recipe.getTitle();
+            // Dessiner le titre
+            drawTitle(state, title);
+            state.yPosition -= 20; // Espace après le titre
 
-        // Add title
-        contentStream.beginText();
-        contentStream.setFont(PDType1Font.HELVETICA_BOLD, 24);
-        contentStream.newLineAtOffset(50, 770);
-        contentStream.showText(recipe.getTitle());
-        contentStream.endText();
+            // Ajouter l'image si présente
+            if (recipe.getImageUrl() != null && !recipe.getImageUrl().isEmpty()) {
+                try {
+                    String imagePath = storageService.downloadImage(recipe.getImageUrl(), localStoragePath);
+                    File imgFile = new File(imagePath);
 
-        // Image handling would require downloading the image first
-        if (recipe.getImageUrl() != null && !recipe.getImageUrl().isEmpty()) {
-            String imagePath = storageService.downloadImage(recipe.getImageUrl(), localStoragePath);
-            PDImageXObject image = PDImageXObject.createFromFile(imagePath, document);
-            contentStream.drawImage(image, 50, 600, 400, 300);
-
-            // Delete temporary image file
-            Files.deleteIfExists(Paths.get(imagePath));
-        }
-
-        // Text writing helper function
-        List<String> textLines = new ArrayList<>();
-        textLines.add("Description: ");
-        addTextWithLineBreaks(recipe.getDescription(), textLines);
-        textLines.add("\nIngredients: ");
-        addTextWithLineBreaks(recipe.getIngredients(), textLines);
-        textLines.add("\nInstructions: ");
-        addTextWithLineBreaks(recipe.getInstructions(), textLines);
-
-        float y = 580; // Starting position
-        if (recipe.getImageUrl() != null && !recipe.getImageUrl().isEmpty()) {
-            y = 280; // Lower position if image exists
-        }
-
-        for (String line : textLines) {
-            if (line.startsWith("Description: ") || line.startsWith("Ingredients: ") || line.startsWith("Instructions: ")) {
-                contentStream.beginText();
-                contentStream.setFont(PDType1Font.HELVETICA_BOLD, 16);
-                contentStream.newLineAtOffset(50, y);
-                contentStream.showText(line);
-                contentStream.endText();
-            } else {
-                contentStream.beginText();
-                contentStream.setFont(PDType1Font.HELVETICA, 12);
-                contentStream.newLineAtOffset(50, y);
-                contentStream.showText(line);
-                contentStream.endText();
+                    if (imgFile.exists() && imgFile.length() > 0) {
+                        drawImage(state, imgFile);
+                        Files.deleteIfExists(Paths.get(imagePath)); // Supprimer fichier temporaire
+                    }
+                } catch (Exception e) {
+                    System.err.println("Warning: Failed to process image: " + e.getMessage());
+                }
             }
-            y -= 15; // Move down for next line
 
-            // Create new page if needed
-            if (y < 50) {
-                contentStream.close();
-                PDPage newPage = new PDPage(PDRectangle.A4);
-                document.addPage(newPage);
-                contentStream = new PDPageContentStream(document, newPage);
-                y = 780;
+            // Extraire les textes
+            String description = extractSectionText(recipe.getDescription(), "Description:", "DESCRIPTION");
+            String ingredients = extractSectionText(recipe.getIngredients(), "INGREDIENTS", null);
+            String instructions = extractSectionText(recipe.getInstructions(), "Instructions:", "INSTRUCTIONS");
+
+            // Ajouter les sections au PDF
+            drawSection(state, "Description", description);
+            drawSection(state, "Ingrédients", ingredients);
+            drawSection(state, "Instructions", instructions);
+
+            // Fermer le dernier contentStream
+            state.contentStream.close();
+
+            // Sauvegarder le PDF
+            state.document.save(filePath);
+            state.document.close();
+
+            // Enregistrer les métadonnées
+            File pdfFile = new File(filePath);
+            String s3Url = storageService.uploadFile(pdfFile, "application/pdf");
+            recipe.setPdfUrl(s3Url);
+
+            PdfMetadata metadata = new PdfMetadata();
+            metadata.setFileName(fileName);
+            metadata.setContentType("application/pdf");
+            metadata.setFileSize(pdfFile.length());
+            metadata.setS3Url(s3Url);
+            metadata.setLocalPath(filePath);
+            metadata.setRecipe(recipe);
+
+            return pdfMetadataRepository.save(metadata);
+        } catch (Exception e) {
+            // Assurer que les ressources sont fermées en cas d'erreur
+            try {
+                if (state.contentStream != null) {
+                    state.contentStream.close();
+                }
+                if (state.document != null) {
+                    state.document.close();
+                }
+            } catch (IOException ioe) {
+                // Ignorer les erreurs de fermeture
             }
+            throw e;
         }
-
-        contentStream.close();
-        document.save(filePath);
-        document.close();
-
-        // Upload to S3 and save metadata
-        File pdfFile = new File(filePath);
-        String s3Url = storageService.uploadFile(pdfFile, "application/pdf");
-
-        recipe.setPdfUrl(s3Url);
-
-        PdfMetadata metadata = new PdfMetadata();
-        metadata.setFileName(fileName);
-        metadata.setContentType("application/pdf");
-        metadata.setFileSize(pdfFile.length());
-        metadata.setS3Url(s3Url);
-        metadata.setLocalPath(filePath);
-        metadata.setRecipe(recipe);
-
-        return pdfMetadataRepository.save(metadata);
     }
 
-    // Helper method to handle line breaking
-    private void addTextWithLineBreaks(String text, List<String> lines) {
+    private String extractSectionText(String text, String... prefixes) {
         if (text == null || text.isEmpty()) {
-            lines.add("");
+            return "";
+        }
+
+        // Retirer les préfixes spécifiés
+        for (String prefix : prefixes) {
+            if (prefix != null && text.startsWith(prefix)) {
+                text = text.substring(prefix.length()).trim();
+            }
+        }
+
+        // Nettoyer le texte - supprimer les ":" isolés au début
+        if (text.startsWith(":")) {
+            text = text.substring(1).trim();
+        }
+
+        // Gérer le cas où le texte commence par des sauts de ligne suivis de ":"
+        String[] lines = text.split("\n", 2);
+        if (lines.length > 1 && lines[0].trim().equals(":")) {
+            text = lines[1].trim();
+        }
+
+        return text;
+    }
+
+    // Vérifier l'espace disponible et créer une nouvelle page si nécessaire
+    private void checkPageBreak(PdfState state, float neededSpace) throws IOException {
+        if (state.yPosition - neededSpace < BOTTOM_MARGIN) {
+            // Fermer la page actuelle
+            state.contentStream.close();
+
+            // Créer une nouvelle page
+            state.currentPage = new PDPage(PDRectangle.A4);
+            state.document.addPage(state.currentPage);
+            state.contentStream = new PDPageContentStream(state.document, state.currentPage);
+            state.yPosition = TOP_MARGIN;
+        }
+    }
+
+    // Dessiner le titre
+    private void drawTitle(PdfState state, String title) throws IOException {
+        float titleWidth = TITLE_FONT.getStringWidth(title) / 1000 * TITLE_SIZE;
+
+        // Si le titre est trop long, réduire la taille
+        float fontSize = TITLE_SIZE;
+        if (titleWidth > TEXT_WIDTH) {
+            fontSize = TITLE_SIZE * TEXT_WIDTH / titleWidth;
+        }
+
+        // Vérifier l'espace disponible
+        checkPageBreak(state, fontSize * LINE_SPACING);
+
+        state.contentStream.beginText();
+        state.contentStream.setFont(TITLE_FONT, fontSize);
+        state.contentStream.newLineAtOffset(MARGIN, state.yPosition);
+        state.contentStream.showText(title);
+        state.contentStream.endText();
+
+        state.yPosition -= (fontSize * LINE_SPACING);
+    }
+
+    // Dessiner une image
+    private void drawImage(PdfState state, File imgFile) throws IOException {
+        PDImageXObject image = PDImageXObject.createFromFileByContent(imgFile, state.document);
+
+        // Calculer les dimensions de l'image proportionnellement
+        float imageWidth = TEXT_WIDTH;
+        float imageHeight = image.getHeight() * imageWidth / image.getWidth();
+
+        // Vérifier l'espace disponible
+        checkPageBreak(state, imageHeight);
+
+        state.contentStream.drawImage(image, MARGIN, state.yPosition - imageHeight, imageWidth, imageHeight);
+
+        state.yPosition -= (imageHeight + 20); // Espace après l'image
+    }
+
+    // Dessiner une section complète (titre + contenu)
+    private void drawSection(PdfState state, String title, String content) throws IOException {
+        // Vérifier l'espace pour le titre
+        checkPageBreak(state, SECTION_SIZE * LINE_SPACING);
+
+        // Dessiner le titre de section
+        state.contentStream.beginText();
+        state.contentStream.setFont(SECTION_FONT, SECTION_SIZE);
+        state.contentStream.newLineAtOffset(MARGIN, state.yPosition);
+        state.contentStream.showText(title);
+        state.contentStream.endText();
+
+        state.yPosition -= SECTION_SIZE * LINE_SPACING;
+
+        // Dessiner le contenu
+        drawMultilineText(state, content);
+        state.yPosition -= 10; // Espace après la section
+    }
+
+    // Dessiner du texte multilignes avec gestion des sauts de page
+    private void drawMultilineText(PdfState state, String text) throws IOException {
+        if (text == null || text.isEmpty()) {
+            state.yPosition -= (TEXT_SIZE * LINE_SPACING); // Espace si vide
             return;
         }
 
-        int maxCharsPerLine = 80;
+        // Nettoyer le texte
+        text = text.replace("\r\n", "\n").replace("\r", "\n");
 
-        for (int i = 0; i < text.length(); i += maxCharsPerLine) {
-            int endIndex = Math.min(i + maxCharsPerLine, text.length());
-            if (endIndex < text.length()) {
-                // Try to find space for better line breaks
-                int spaceIndex = text.lastIndexOf(' ', endIndex);
-                if (spaceIndex > i && spaceIndex - i > maxCharsPerLine / 2) {
-                    endIndex = spaceIndex;
+        // Diviser par lignes existantes
+        String[] lines = text.split("\n");
+
+        for (String line : lines) {
+            // Couper les lignes trop longues
+            float lineWidth = TEXT_FONT.getStringWidth(line) / 1000 * TEXT_SIZE;
+            if (lineWidth <= TEXT_WIDTH) {
+                // La ligne tient sur la largeur
+                drawTextLine(state, line);
+            } else {
+                // Diviser en plusieurs lignes
+                String[] words = line.split(" ");
+                StringBuilder currentLine = new StringBuilder();
+
+                for (String word : words) {
+                    String testLine = currentLine.toString() + (currentLine.length() > 0 ? " " : "") + word;
+                    float testWidth = TEXT_FONT.getStringWidth(testLine) / 1000 * TEXT_SIZE;
+
+                    if (testWidth <= TEXT_WIDTH) {
+                        // Ajouter le mot à la ligne actuelle
+                        if (currentLine.length() > 0) {
+                            currentLine.append(" ");
+                        }
+                        currentLine.append(word);
+                    } else {
+                        // Dessiner la ligne actuelle et commencer une nouvelle ligne
+                        if (currentLine.length() > 0) {
+                            drawTextLine(state, currentLine.toString());
+                            currentLine = new StringBuilder(word);
+                        } else {
+                            // Le mot est plus long que la largeur disponible
+                            drawTextLine(state, word);
+                        }
+                    }
+                }
+
+                // Dessiner la dernière ligne
+                if (currentLine.length() > 0) {
+                    drawTextLine(state, currentLine.toString());
                 }
             }
-            lines.add(text.substring(i, endIndex));
         }
+    }
+
+    // Dessiner une seule ligne de texte, avec gestion des sauts de page
+    private void drawTextLine(PdfState state, String line) throws IOException {
+        // Vérifier l'espace disponible
+        checkPageBreak(state, TEXT_SIZE);
+
+        // Dessiner la ligne
+        state.contentStream.beginText();
+        state.contentStream.setFont(TEXT_FONT, TEXT_SIZE);
+        state.contentStream.newLineAtOffset(MARGIN, state.yPosition);
+        state.contentStream.showText(line);
+        state.contentStream.endText();
+
+        state.yPosition -= (TEXT_SIZE * LINE_SPACING);
     }
 }

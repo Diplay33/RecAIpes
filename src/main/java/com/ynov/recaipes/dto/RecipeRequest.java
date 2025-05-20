@@ -4,8 +4,6 @@ import lombok.Data;
 
 @Data
 public class RecipeRequest {
-    private String ingredients;
-    private String diet;
-    private String cuisine;
-    private String userName;
+    private String dishName;     // Nouveau champ pour le nom du plat
+    private String userName;     // Conserver pour l'auteur
 }

@@ -31,20 +31,28 @@ public class OpenAIService {
     @Value("${openai.api.url.images:https://api.openai.com/v1/images/generations}")
     private String imagesUrl;
 
-    public String generateRecipeText(String ingredients, String diet, String cuisine) {
+    public String generateRecipeText(String dishName) {
         HttpHeaders headers = createHeaders();
 
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", "gpt-4");
+
+        String prompt = String.format(
+                "Crée une recette détaillée en français pour '%s'" +
+                        "Format ta réponse avec: TITRE (le nom du plat), INGREDIENTS (avec quantités), INSTRUCTIONS (étapes numérotées), " +
+                        "et une brève DESCRIPTION à la fin.",
+                dishName
+        );
+
         requestBody.put("messages", List.of(
                 Map.of(
                         "role", "system",
-                        "content", "You are a professional chef. Create a complete recipe with title, ingredients, and step-by-step instructions."
+                        "content", "Tu es un chef professionnel spécialisé dans la cuisine du monde entier. " +
+                                "Crée des recettes détaillées, authentiques et savoureuses."
                 ),
                 Map.of(
                         "role", "user",
-                        "content", String.format("Create a detailed recipe using these ingredients: %s. Diet: %s. Cuisine style: %s. Format your response with: TITLE, INGREDIENTS (with quantities), INSTRUCTIONS (numbered steps), and a brief DESCRIPTION at the end.",
-                                ingredients, diet, cuisine)
+                        "content", prompt
                 )
         ));
 
@@ -65,7 +73,7 @@ public class OpenAIService {
 
         Map<String, Object> requestBody = new HashMap<>();
         requestBody.put("model", "dall-e-3");
-        requestBody.put("prompt", "High quality, appetizing food photography of " + recipeTitle + ", professional lighting, top view, on a beautiful plate with garnish");
+        requestBody.put("prompt", "High quality, appetizing food photography of " + recipeTitle + ", professional lighting, top view, on a beautiful plate with garnish with only the list of ingredients you need for the dish.");
         requestBody.put("n", 1);
         requestBody.put("size", "1024x1024");
 
