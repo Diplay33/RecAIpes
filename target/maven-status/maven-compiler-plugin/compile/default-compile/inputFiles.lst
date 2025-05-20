@@ -1,0 +1,14 @@
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/RecaipesApplication.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/config/OpenAIConfig.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/config/S3Config.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/controller/RecipeController.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/dto/RecipeRequest.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/dto/RecipeResponse.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/model/PdfMetadata.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/model/Recipe.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/repository/PdfMetadataRepository.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/repository/RecipeRepository.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/service/OpenAIService.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/service/PdfService.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/service/RecipeService.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/service/StorageService.java

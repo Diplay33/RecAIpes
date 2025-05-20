@@ -1,0 +1,15 @@
+com/ynov/recaipes/repository/PdfMetadataRepository.class
+com/ynov/recaipes/model/Recipe.class
+com/ynov/recaipes/repository/RecipeRepository.class
+com/ynov/recaipes/config/OpenAIConfig.class
+com/ynov/recaipes/controller/RecipeController.class
+com/ynov/recaipes/service/StorageService.class
+com/ynov/recaipes/service/OpenAIService.class
+com/ynov/recaipes/RecaipesApplication.class
+com/ynov/recaipes/dto/RecipeRequest.class
+com/ynov/recaipes/service/RecipeService.class
+com/ynov/recaipes/dto/RecipeResponse$RecipeResponseBuilder.class
+com/ynov/recaipes/config/S3Config.class
+com/ynov/recaipes/model/PdfMetadata.class
+com/ynov/recaipes/dto/RecipeResponse.class
+com/ynov/recaipes/service/PdfService.class
