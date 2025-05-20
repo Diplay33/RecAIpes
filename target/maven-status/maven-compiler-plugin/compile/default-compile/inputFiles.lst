@@ -1,4 +1,5 @@
 /Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/RecaipesApplication.java
+/Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/config/EnvConfig.java
 /Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/config/OpenAIConfig.java
 /Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/config/S3Config.java
 /Users/azrua/RecAIpes/src/main/java/com/ynov/recaipes/controller/RecipeController.java
