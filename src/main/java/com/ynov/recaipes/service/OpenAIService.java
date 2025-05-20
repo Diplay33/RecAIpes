@@ -1,6 +1,8 @@
 package com.ynov.recaipes.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.cdimascio.dotenv.Dotenv;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -22,7 +24,8 @@ public class OpenAIService {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @Value("${openai.api.key:}")
+    // Supprimez ou commentez cette ligne
+    // @Value("${openai.api.key:}")
     private String apiKey;
 
     @Value("${openai.api.url.completions:https://api.openai.com/v1/chat/completions}")
@@ -30,6 +33,22 @@ public class OpenAIService {
 
     @Value("${openai.api.url.images:https://api.openai.com/v1/images/generations}")
     private String imagesUrl;
+
+    // Ajoutez cette méthode
+    @PostConstruct
+    public void init() {
+        try {
+            Dotenv dotenv = Dotenv.configure().ignoreIfMissing().load();
+            this.apiKey = dotenv.get("OPENAI_API_KEY");
+            if (this.apiKey == null || this.apiKey.isEmpty()) {
+                System.err.println("ATTENTION: La clé API OpenAI n'a pas été trouvée dans le fichier .env");
+            } else {
+                System.out.println("Clé API OpenAI chargée avec succès depuis le fichier .env");
+            }
+        } catch (Exception e) {
+            System.err.println("Erreur lors du chargement de la clé API: " + e.getMessage());
+        }
+    }
 
     public String generateRecipeText(String dishName) {
         HttpHeaders headers = createHeaders();
