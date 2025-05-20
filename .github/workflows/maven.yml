@@ -15,9 +15,9 @@ on:
     branches: [ "main" ]
 
 permissions:
-  contents: read
-  security-events: write
-  dependabot: write
+  contents: write
+  actions: read
+  contents-write: write
 
 jobs:
   build:
