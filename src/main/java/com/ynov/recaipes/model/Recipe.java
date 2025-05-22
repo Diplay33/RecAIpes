@@ -57,9 +57,13 @@ public class Recipe {
     // Nouveau : Temps de préparation (en minutes)
     private Integer preparationTime;
 
-    // Relation avec les tags
+    // Relation avec les tags - CASCADE DELETE
     @OneToMany(mappedBy = "recipe", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<RecipeTag> tags = new ArrayList<>();
+
+    // Relation avec les métadonnées PDF - CASCADE DELETE
+    @OneToOne(mappedBy = "recipe", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private PdfMetadata pdfMetadata;
 
     @Column(updatable = false)
     private LocalDateTime createdAt;

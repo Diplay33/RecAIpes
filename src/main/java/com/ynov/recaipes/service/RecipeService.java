@@ -3,10 +3,13 @@ package com.ynov.recaipes.service;
 import com.ynov.recaipes.dto.RecipeRequest;
 import com.ynov.recaipes.model.Recipe;
 import com.ynov.recaipes.model.PdfMetadata;
+import com.ynov.recaipes.model.RecipeTag;
 import com.ynov.recaipes.repository.RecipeRepository;
+import com.ynov.recaipes.repository.PdfMetadataRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -20,12 +23,12 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class RecipeService {
     private final RecipeRepository recipeRepository;
+    private final PdfMetadataRepository pdfMetadataRepository;
     private final OpenAIService openAIService;
     private final PdfService pdfService;
 
     private final Map<String, Object> userLocks = new ConcurrentHashMap<>();
 
-    // Puis modifier le début de generateRecipe ainsi:
     public Recipe generateRecipe(RecipeRequest request) {
         // Créer un verrou spécifique à cet utilisateur
         Object userLock = userLocks.computeIfAbsent(request.getUserName(), k -> new Object());
@@ -47,9 +50,7 @@ public class RecipeService {
                 }
 
                 // Génération d'une nouvelle recette
-                String recipeText = openAIService.generateRecipeText(
-                        request.getDishName()   // Utiliser le nom du plat plutôt que les ingrédients
-                );
+                String recipeText = openAIService.generateRecipeText(request.getDishName());
 
                 System.out.println("Recette générée : \n" + recipeText);
                 Map<String, String> parsedRecipe = parseRecipeText(recipeText);
@@ -83,26 +84,6 @@ public class RecipeService {
         }
     }
 
-    public void deleteRecipe(Long id) {
-        Recipe recipe = getRecipeById(id);
-        recipeRepository.delete(recipe);
-        System.out.println("Recette supprimée: " + id);
-    }
-
-    public Recipe updateRecipe(Long id, RecipeRequest request) {
-        Recipe existingRecipe = getRecipeById(id);
-
-        // Mise à jour des champs modifiables
-        if (request.getDishName() != null) {
-            existingRecipe.setTitle(request.getDishName());
-        }
-        if (request.getUserName() != null) {
-            existingRecipe.setCreatedBy(request.getUserName());
-        }
-
-        return recipeRepository.save(existingRecipe);
-    }
-
     public List<Recipe> getAllRecipes() {
         return recipeRepository.findAll();
     }
@@ -110,6 +91,57 @@ public class RecipeService {
     public Recipe getRecipeById(Long id) {
         return recipeRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Recipe not found with id: " + id));
+    }
+
+    public void deleteRecipe(Long id) {
+        try {
+            Recipe recipe = getRecipeById(id);
+
+            // 1. Supprimer manuellement les métadonnées PDF d'abord
+            PdfMetadata pdfMetadata = pdfMetadataRepository.findByRecipeId(id);
+            if (pdfMetadata != null) {
+                System.out.println("Suppression des métadonnées PDF: " + pdfMetadata.getId());
+                pdfMetadataRepository.delete(pdfMetadata);
+            }
+
+            // 2. Les tags seront supprimés automatiquement par cascade
+            // 3. Supprimer la recette
+            recipeRepository.delete(recipe);
+
+            System.out.println("Recette supprimée avec succès: " + id);
+
+        } catch (Exception e) {
+            System.err.println("Erreur lors de la suppression de la recette " + id + ": " + e.getMessage());
+            throw new RuntimeException("Impossible de supprimer la recette: " + e.getMessage(), e);
+        }
+    }
+    // À ajouter dans RecipeService.java
+    public List<Recipe> getRecipesByUser(String userName) {
+        return recipeRepository.findByCreatedByOrderByCreatedAtDesc(userName);
+    }
+
+    public Map<String, Object> getRecipeStats() {
+        List<Recipe> allRecipes = recipeRepository.findAll();
+        return Map.of(
+                "total", allRecipes.size(),
+                "today", allRecipes.stream()
+                        .filter(r -> r.getCreatedAt().toLocalDate().equals(LocalDate.now()))
+                        .count()
+        );
+    }
+
+    public Recipe updateRecipe(Long id, RecipeRequest request) {
+        Recipe existingRecipe = getRecipeById(id);
+
+        // Mise à jour des champs modifiables
+        if (request.getDishName() != null && !request.getDishName().isEmpty()) {
+            existingRecipe.setTitle(request.getDishName());
+        }
+        if (request.getUserName() != null && !request.getUserName().isEmpty()) {
+            existingRecipe.setCreatedBy(request.getUserName());
+        }
+
+        return recipeRepository.save(existingRecipe);
     }
 
     private Map<String, String> parseRecipeText(String recipeText) {
