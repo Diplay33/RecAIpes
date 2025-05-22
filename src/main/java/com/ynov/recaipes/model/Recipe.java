@@ -6,6 +6,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Data
@@ -31,11 +33,33 @@ public class Recipe {
     @Column(length = 1000)
     private String imageUrl;
 
-    // Également augmenter celle-ci par précaution
+    // URL du PDF
     @Column(length = 1000)
     private String pdfUrl;
 
+    // URL du bucket externe
+    @Column(length = 1000)
+    private String externalBucketUrl;
+
+    // ID externe pour le bucket
+    private String externalId;
+
     private String createdBy;
+
+    // Nouveau : Catégorie de la recette
+    @Enumerated(EnumType.STRING)
+    private RecipeCategory category;
+
+    // Nouveau : Difficulté
+    @Enumerated(EnumType.STRING)
+    private RecipeDifficulty difficulty;
+
+    // Nouveau : Temps de préparation (en minutes)
+    private Integer preparationTime;
+
+    // Relation avec les tags
+    @OneToMany(mappedBy = "recipe", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<RecipeTag> tags = new ArrayList<>();
 
     @Column(updatable = false)
     private LocalDateTime createdAt;
@@ -43,5 +67,53 @@ public class Recipe {
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+    }
+
+    // Méthodes utilitaires pour les tags
+    public void addTag(String tagKey, String tagValue, String description) {
+        tags.add(new RecipeTag(this, tagKey, tagValue, description));
+    }
+
+    public String getTagValue(String tagKey) {
+        return tags.stream()
+                .filter(tag -> tag.getTagKey().equals(tagKey))
+                .findFirst()
+                .map(RecipeTag::getTagValue)
+                .orElse(null);
+    }
+
+    // Enums pour les nouvelles propriétés
+    public enum RecipeCategory {
+        ENTREE("Entrée"),
+        PLAT_PRINCIPAL("Plat principal"),
+        DESSERT("Dessert"),
+        BOISSON("Boisson"),
+        ACCOMPAGNEMENT("Accompagnement");
+
+        private final String displayName;
+
+        RecipeCategory(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+    }
+
+    public enum RecipeDifficulty {
+        FACILE("Facile"),
+        MOYEN("Moyen"),
+        DIFFICILE("Difficile");
+
+        private final String displayName;
+
+        RecipeDifficulty(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
     }
 }

@@ -12,6 +12,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -22,52 +23,63 @@ public class RecipeService {
     private final OpenAIService openAIService;
     private final PdfService pdfService;
 
+    private final Map<String, Object> userLocks = new ConcurrentHashMap<>();
+
+    // Puis modifier le début de generateRecipe ainsi:
     public Recipe generateRecipe(RecipeRequest request) {
-        try {
-            // Vérifier si l'utilisateur a déjà généré une recette similaire récemment
-            List<Recipe> recentRecipes = recipeRepository.findByCreatedByOrderByCreatedAtDesc(request.getUserName());
+        // Créer un verrou spécifique à cet utilisateur
+        Object userLock = userLocks.computeIfAbsent(request.getUserName(), k -> new Object());
 
-            if (!recentRecipes.isEmpty()) {
-                Recipe mostRecent = recentRecipes.get(0);
-                // Si moins d'une minute s'est écoulée et le plat est similaire, retourner la recette existante
-                if (ChronoUnit.SECONDS.between(mostRecent.getCreatedAt(), LocalDateTime.now()) < 60 &&
-                        mostRecent.getTitle().toLowerCase().contains(request.getDishName().toLowerCase())) {
-                    System.out.println("Réutilisation d'une recette récente: " + mostRecent.getId());
-                    return mostRecent;
+        // Utiliser un verrou synchronisé pour éviter les appels parallèles du même utilisateur
+        synchronized (userLock) {
+            try {
+                // Vérifier si l'utilisateur a déjà généré une recette similaire récemment
+                List<Recipe> recentRecipes = recipeRepository.findByCreatedByOrderByCreatedAtDesc(request.getUserName());
+
+                if (!recentRecipes.isEmpty()) {
+                    Recipe mostRecent = recentRecipes.get(0);
+                    // Si moins d'une minute s'est écoulée et le plat est similaire, retourner la recette existante
+                    if (ChronoUnit.SECONDS.between(mostRecent.getCreatedAt(), LocalDateTime.now()) < 60 &&
+                            mostRecent.getTitle().toLowerCase().contains(request.getDishName().toLowerCase())) {
+                        System.out.println("Réutilisation d'une recette récente: " + mostRecent.getId());
+                        return mostRecent;
+                    }
                 }
+
+                // Génération d'une nouvelle recette
+                String recipeText = openAIService.generateRecipeText(
+                        request.getDishName()   // Utiliser le nom du plat plutôt que les ingrédients
+                );
+
+                System.out.println("Recette générée : \n" + recipeText);
+                Map<String, String> parsedRecipe = parseRecipeText(recipeText);
+
+                Recipe recipe = new Recipe();
+                recipe.setTitle(parsedRecipe.get("title"));
+                recipe.setDescription(parsedRecipe.get("description"));
+                recipe.setIngredients(parsedRecipe.get("ingredients"));
+                recipe.setInstructions(parsedRecipe.get("instructions"));
+                recipe.setCreatedBy(request.getUserName());
+
+                // Génération de l'image avant la sauvegarde
+                String imageUrl = openAIService.generateRecipeImage(recipe.getTitle());
+                recipe.setImageUrl(imageUrl);
+
+                // Sauvegarde initiale pour obtenir un ID
+                recipe = recipeRepository.save(recipe);
+
+                // Génération et sauvegarde du PDF
+                PdfMetadata pdfMetadata = pdfService.generateAndSavePdf(recipe);
+                recipe.setPdfUrl(pdfMetadata.getS3Url());
+
+                String requestId = UUID.randomUUID().toString();
+                System.out.println("Recette générée avec succès: " + recipe.getId() + " (request ID: " + requestId + ")");
+
+                // Un seul save final avec toutes les informations
+                return recipeRepository.save(recipe);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to generate recipe: " + e.getMessage(), e);
             }
-
-            // Génération d'une nouvelle recette
-            String recipeText = openAIService.generateRecipeText(
-                    request.getDishName()   // Utiliser le nom du plat plutôt que les ingrédients
-            );
-
-            System.out.println("Recette générée : \n" + recipeText);
-            Map<String, String> parsedRecipe = parseRecipeText(recipeText);
-
-            Recipe recipe = new Recipe();
-            recipe.setTitle(parsedRecipe.get("title"));
-            recipe.setDescription(parsedRecipe.get("description"));
-            recipe.setIngredients(parsedRecipe.get("ingredients"));
-            recipe.setInstructions(parsedRecipe.get("instructions"));
-            recipe.setCreatedBy(request.getUserName());
-
-            recipe = recipeRepository.save(recipe);
-
-            String imageUrl = openAIService.generateRecipeImage(recipe.getTitle());
-            recipe.setImageUrl(imageUrl);
-
-            recipe = recipeRepository.save(recipe);
-
-            PdfMetadata pdfMetadata = pdfService.generateAndSavePdf(recipe);
-
-            recipe.setPdfUrl(pdfMetadata.getS3Url());
-            String requestId = UUID.randomUUID().toString();
-            System.out.println("Recette générée avec succès: " + recipe.getId() + " (request ID: " + requestId + ")");
-            return recipeRepository.save(recipe);
-
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to generate recipe: " + e.getMessage(), e);
         }
     }
 

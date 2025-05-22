@@ -91,10 +91,10 @@ public class OpenAIService {
         HttpHeaders headers = createHeaders();
 
         Map<String, Object> requestBody = new HashMap<>();
-        requestBody.put("model", "dall-e-3");
+        requestBody.put("model", "dall-e-2");
         requestBody.put("prompt", "Appetizing picture of" + recipeTitle + "with a professional light, presenting all the dish and sides, only show the ingredients used in the dish");
         requestBody.put("n", 1);
-        requestBody.put("size", "1024x1024");
+        requestBody.put("size", "256x256");
 
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
 
