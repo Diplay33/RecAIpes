@@ -23,7 +23,6 @@ public class BucketTestController {
     public ResponseEntity<Map<String, Object>> getStorageInfo() {
         Map<String, Object> info = new HashMap<>();
 
-        // Info générale - Méthode simplifiée pour éviter l'erreur
         String activeType = "Unknown";
         if (storageService.isExternalBucketAvailable()) {
             activeType = "External Bucket";
@@ -32,7 +31,6 @@ public class BucketTestController {
         }
         info.put("activeStorageType", activeType);
 
-        // Bucket externe
         ExternalBucketProvider externalProvider = storageService.getExternalBucketProvider();
         if (externalProvider != null) {
             info.put("externalBucket", Map.of(
@@ -46,7 +44,6 @@ public class BucketTestController {
             ));
         }
 
-        // Local
         info.put("localStorage", Map.of(
                 "available", storageService.isLocalStorageAvailable()
         ));
@@ -146,6 +143,66 @@ public class BucketTestController {
             return ResponseEntity.ok(Map.of(
                     "success", false,
                     "error", "Private search failed: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
+     * NOUVEAU : Test de suppression d'un fichier
+     */
+    @DeleteMapping("/test-delete")
+    public ResponseEntity<Map<String, Object>> testDeleteFile(@RequestParam String fileUrl) {
+        try {
+            boolean success = storageService.deleteFile(fileUrl);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", success,
+                    "message", success ?
+                            "Fichier supprimé avec succès" :
+                            "Échec de la suppression du fichier",
+                    "fileUrl", fileUrl
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of(
+                    "success", false,
+                    "error", "Erreur lors de la suppression: " + e.getMessage(),
+                    "fileUrl", fileUrl
+            ));
+        }
+    }
+
+    /**
+     * NOUVEAU : Test de suppression par ID de fichier
+     */
+    @DeleteMapping("/test-delete-by-id/{fileId}")
+    public ResponseEntity<Map<String, Object>> testDeleteFileById(@PathVariable String fileId) {
+        ExternalBucketProvider provider = storageService.getExternalBucketProvider();
+
+        if (provider == null) {
+            return ResponseEntity.ok(Map.of(
+                    "success", false,
+                    "error", "External bucket provider not available"
+            ));
+        }
+
+        try {
+            // Construire l'URL du fichier
+            String fileUrl = provider.getFileUrl(fileId);
+            boolean success = provider.deleteFile(fileUrl);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", success,
+                    "message", success ?
+                            "Fichier supprimé avec succès" :
+                            "Échec de la suppression du fichier",
+                    "fileId", fileId,
+                    "fileUrl", fileUrl
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of(
+                    "success", false,
+                    "error", "Erreur lors de la suppression: " + e.getMessage(),
+                    "fileId", fileId
             ));
         }
     }

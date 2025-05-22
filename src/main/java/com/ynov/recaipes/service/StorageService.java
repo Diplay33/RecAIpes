@@ -20,7 +20,6 @@ public class StorageService {
     public StorageService(List<StorageProvider> storageProviders) {
         this.storageProviders = storageProviders;
 
-        // Afficher les providers disponibles
         String providers = storageProviders.stream()
                 .map(p -> p.getClass().getSimpleName() + " (available: " + p.isAvailable() + ")")
                 .collect(Collectors.joining(", "));
@@ -28,15 +27,13 @@ public class StorageService {
     }
 
     public String uploadFile(File file, String contentType) {
-        // Vérifier si au moins un provider est disponible
         if (storageProviders.isEmpty()) {
             throw new IllegalStateException("No storage providers available");
         }
 
-        // Ordre de priorité : ExternalBucket > Local
         List<StorageProvider> orderedProviders = new ArrayList<>();
 
-        // 1. Bucket externe en priorité (fourni par l'école)
+        // 1. Bucket externe en priorité
         storageProviders.stream()
                 .filter(p -> p instanceof ExternalBucketProvider)
                 .filter(StorageProvider::isAvailable)
@@ -54,7 +51,6 @@ public class StorageService {
             throw new IllegalStateException("No available storage providers");
         }
 
-        // Utiliser le premier provider disponible dans l'ordre de priorité
         StorageProvider selectedProvider = orderedProviders.get(0);
         System.out.println("Using storage provider: " + selectedProvider.getClass().getSimpleName());
 
@@ -64,7 +60,6 @@ public class StorageService {
             System.err.println("Upload failed with " + selectedProvider.getClass().getSimpleName() +
                     ": " + e.getMessage());
 
-            // Essayer le provider suivant si disponible
             if (orderedProviders.size() > 1) {
                 StorageProvider fallbackProvider = orderedProviders.get(1);
                 System.out.println("Trying fallback provider: " + fallbackProvider.getClass().getSimpleName());
@@ -73,6 +68,66 @@ public class StorageService {
 
             throw new RuntimeException("All storage providers failed", e);
         }
+    }
+
+    /**
+     * NOUVEAU : Supprimer un fichier du stockage
+     */
+    public boolean deleteFile(String fileUrl) {
+        if (fileUrl == null || fileUrl.isEmpty()) {
+            System.err.println("❌ URL de fichier vide ou nulle");
+            return false;
+        }
+
+        System.out.println("🗑️ Tentative de suppression du fichier: " + fileUrl);
+
+        // Identifier le type de stockage basé sur l'URL
+        StorageProvider targetProvider = null;
+
+        if (fileUrl.startsWith("file://")) {
+            // Fichier local
+            targetProvider = getLocalProvider();
+        } else if (fileUrl.contains("141.94.115.201") || fileUrl.contains("/public/file/")) {
+            // Bucket externe
+            targetProvider = getExternalBucketProvider();
+        }
+
+        if (targetProvider != null && targetProvider.isAvailable()) {
+            try {
+                boolean success = targetProvider.deleteFile(fileUrl);
+                if (success) {
+                    System.out.println("✅ Fichier supprimé avec succès: " + fileUrl);
+                } else {
+                    System.err.println("❌ Échec de la suppression: " + fileUrl);
+                }
+                return success;
+            } catch (Exception e) {
+                System.err.println("❌ Erreur lors de la suppression: " + e.getMessage());
+                return false;
+            }
+        } else {
+            System.err.println("❌ Aucun provider disponible pour supprimer: " + fileUrl);
+            return false;
+        }
+    }
+
+    /**
+     * NOUVEAU : Supprimer plusieurs fichiers
+     */
+    public Map<String, Boolean> deleteFiles(List<String> fileUrls) {
+        Map<String, Boolean> results = new HashMap<>();
+
+        if (fileUrls == null || fileUrls.isEmpty()) {
+            return results;
+        }
+
+        for (String fileUrl : fileUrls) {
+            if (fileUrl != null && !fileUrl.isEmpty()) {
+                results.put(fileUrl, deleteFile(fileUrl));
+            }
+        }
+
+        return results;
     }
 
     public String downloadImage(String imageUrl, String destinationDir) throws IOException {
@@ -90,9 +145,6 @@ public class StorageService {
         }
     }
 
-    /**
-     * Obtient le provider de bucket externe s'il est disponible
-     */
     public ExternalBucketProvider getExternalBucketProvider() {
         return storageProviders.stream()
                 .filter(provider -> provider instanceof ExternalBucketProvider)
@@ -102,9 +154,6 @@ public class StorageService {
                 .orElse(null);
     }
 
-    /**
-     * Obtient le provider Local s'il est disponible
-     */
     public LocalStorageProvider getLocalProvider() {
         return storageProviders.stream()
                 .filter(provider -> provider instanceof LocalStorageProvider)
@@ -114,23 +163,14 @@ public class StorageService {
                 .orElse(null);
     }
 
-    /**
-     * Vérifie si le bucket externe est disponible
-     */
     public boolean isExternalBucketAvailable() {
         return getExternalBucketProvider() != null;
     }
 
-    /**
-     * Vérifie si le stockage local est disponible
-     */
     public boolean isLocalStorageAvailable() {
         return getLocalProvider() != null;
     }
 
-    /**
-     * Retourne le type de stockage actuellement utilisé
-     */
     public String getActiveStorageType() {
         if (isExternalBucketAvailable()) {
             return "External Bucket";
@@ -141,9 +181,6 @@ public class StorageService {
         }
     }
 
-    /**
-     * Test de connectivité pour tous les providers
-     */
     public Map<String, Object> getDetailedStorageInfo() {
         Map<String, Object> info = new HashMap<>();
 
@@ -163,9 +200,6 @@ public class StorageService {
         return info;
     }
 
-    /**
-     * Obtient n'importe quel provider disponible
-     */
     public StorageProvider getAvailableProvider() {
         return storageProviders.stream()
                 .filter(StorageProvider::isAvailable)
@@ -173,9 +207,6 @@ public class StorageService {
                 .orElse(null);
     }
 
-    /**
-     * Liste tous les providers avec leur statut
-     */
     public List<Map<String, Object>> getAllProvidersStatus() {
         return storageProviders.stream()
                 .map(provider -> {

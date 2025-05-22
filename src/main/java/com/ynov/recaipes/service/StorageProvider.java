@@ -7,4 +7,7 @@ public interface StorageProvider {
     String uploadFile(File file, String contentType);
     String getFileUrl(String fileName);
     boolean isAvailable();
+
+    // NOUVEAU : Méthode pour supprimer un fichier
+    boolean deleteFile(String fileUrl);
 }

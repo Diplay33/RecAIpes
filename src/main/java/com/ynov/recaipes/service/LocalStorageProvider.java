@@ -45,4 +45,30 @@ public class LocalStorageProvider implements StorageProvider {
     public boolean isAvailable() {
         return true; // Toujours disponible
     }
+
+    @Override
+    public boolean deleteFile(String fileUrl) {
+        try {
+            // Extraire le chemin du fichier depuis l'URL file://
+            if (fileUrl.startsWith("file://")) {
+                String filePath = fileUrl.substring(7); // Enlever "file://"
+                Path path = Paths.get(filePath);
+
+                if (Files.exists(path)) {
+                    Files.delete(path);
+                    System.out.println("✅ Fichier local supprimé: " + filePath);
+                    return true;
+                } else {
+                    System.err.println("⚠️ Fichier local introuvable: " + filePath);
+                    return false;
+                }
+            } else {
+                System.err.println("❌ URL de fichier locale invalide: " + fileUrl);
+                return false;
+            }
+        } catch (IOException e) {
+            System.err.println("❌ Erreur lors de la suppression du fichier local: " + e.getMessage());
+            return false;
+        }
+    }
 }

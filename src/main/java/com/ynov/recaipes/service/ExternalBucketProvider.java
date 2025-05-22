@@ -23,10 +23,10 @@ public class ExternalBucketProvider implements StorageProvider {
     private String bucketBaseUrl;
 
     @Value("${external.bucket.group.id:8}")
-    private Integer groupId;  // CHANGÉ : Integer au lieu de String
+    private Integer groupId;
 
     @Value("${external.bucket.token:}")
-    private String studentToken;  // NOUVEAU : Token d'authentification
+    private String studentToken;
 
     private final RestTemplate restTemplate;
 
@@ -47,17 +47,13 @@ public class ExternalBucketProvider implements StorageProvider {
         try {
             String uploadUrl = bucketBaseUrl + "/student/upload";
 
-            // Préparer les headers SANS Content-Type (laissé automatique pour multipart)
             HttpHeaders headers = new HttpHeaders();
-            headers.setBearerAuth(studentToken);  // Bearer token comme dans Bruno
-            // NE PAS définir Content-Type - Spring le fait automatiquement pour multipart
+            headers.setBearerAuth(studentToken);
 
-            // Préparer le body multipart selon le format Bruno EXACT
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("file", new FileSystemResource(file));
-            body.add("idExterne", generateExternalIdNumeric());  // CHANGÉ : entier comme Bruno
+            body.add("idExterne", generateExternalIdNumeric());
 
-            // Tags selon Bruno (peuvent être vides)
             body.add("tag1", "recipe");
             body.add("tag2", extractRecipeType(file.getName()));
             body.add("tag3", getCurrentDate());
@@ -69,7 +65,6 @@ public class ExternalBucketProvider implements StorageProvider {
             System.out.println("📦 Token: " + (studentToken != null ? "✅ Présent" : "❌ Manquant"));
             System.out.println("📎 Fichier: " + file.getName() + " (" + file.length() + " bytes)");
 
-            // Envoyer la requête
             ResponseEntity<Map> response = restTemplate.postForEntity(
                     uploadUrl, requestEntity, Map.class);
 
@@ -77,7 +72,6 @@ public class ExternalBucketProvider implements StorageProvider {
                 Map<String, Object> responseBody = response.getBody();
                 System.out.println("✅ Upload réussi vers bucket externe: " + responseBody);
 
-                // Construire l'URL publique basée sur la réponse
                 return constructPublicUrl(responseBody);
             } else {
                 throw new RuntimeException("Failed to upload to external bucket: " + response.getStatusCode());
@@ -91,14 +85,11 @@ public class ExternalBucketProvider implements StorageProvider {
 
     @Override
     public String getFileUrl(String fileName) {
-        // Pour le bucket externe, on utilise l'URL publique directe
         return bucketBaseUrl + "/public/file/" + fileName;
     }
 
     @Override
     public boolean isAvailable() {
-        // Configuration requise : URL + groupID
-        // Token optionnel (requis seulement pour upload)
         boolean available = bucketEnabled &&
                 bucketBaseUrl != null && !bucketBaseUrl.isEmpty() &&
                 groupId != null;
@@ -116,22 +107,82 @@ public class ExternalBucketProvider implements StorageProvider {
         return available;
     }
 
+    @Override
+    public boolean deleteFile(String fileUrl) {
+        if (studentToken == null || studentToken.isEmpty()) {
+            System.err.println("❌ Token requis pour supprimer un fichier du bucket externe");
+            return false;
+        }
+
+        try {
+            // Extraire l'ID du fichier depuis l'URL
+            String fileId = extractFileIdFromUrl(fileUrl);
+            if (fileId == null) {
+                System.err.println("❌ Impossible d'extraire l'ID du fichier depuis l'URL: " + fileUrl);
+                return false;
+            }
+
+            String deleteUrl = bucketBaseUrl + "/student/upload/" + fileId;
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(studentToken);
+
+            HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+
+            System.out.println("🗑️ Suppression du fichier: " + deleteUrl);
+
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    deleteUrl, HttpMethod.DELETE, requestEntity, Map.class);
+
+            if (response.getStatusCode().is2xxSuccessful()) {
+                System.out.println("✅ Fichier supprimé avec succès du bucket externe");
+                return true;
+            } else {
+                System.err.println("❌ Échec de la suppression: " + response.getStatusCode());
+                return false;
+            }
+
+        } catch (Exception e) {
+            System.err.println("❌ Erreur lors de la suppression du fichier: " + e.getMessage());
+            return false;
+        }
+    }
+
     /**
-     * Recherche publique selon l'API Bruno (GET avec JSON body)
+     * Extraire l'ID du fichier depuis l'URL
      */
+    private String extractFileIdFromUrl(String fileUrl) {
+        if (fileUrl == null || fileUrl.isEmpty()) {
+            return null;
+        }
+
+        // Format attendu: http://141.94.115.201/public/file/{id}
+        if (fileUrl.contains("/public/file/")) {
+            String[] parts = fileUrl.split("/public/file/");
+            if (parts.length > 1) {
+                return parts[1];
+            }
+        }
+
+        // Si l'URL ne correspond pas au format attendu, essayer d'extraire le dernier segment
+        String[] segments = fileUrl.split("/");
+        if (segments.length > 0) {
+            return segments[segments.length - 1];
+        }
+
+        return null;
+    }
+
     public Map<String, Object> searchFiles(String tag1, String tag2, String tag3) {
         try {
             String searchUrl = bucketBaseUrl + "/public/search";
 
-            // Headers pour requête JSON
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
 
-            // Body JSON selon format Bruno
             Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("groupID", groupId);  // CORRIGÉ : Integer groupID
+            requestBody.put("groupID", groupId);
 
-            // Ajouter les tags seulement s'ils ne sont pas vides
             if (tag1 != null && !tag1.isEmpty()) requestBody.put("tag1", tag1);
             if (tag2 != null && !tag2.isEmpty()) requestBody.put("tag2", tag2);
             if (tag3 != null && !tag3.isEmpty()) requestBody.put("tag3", tag3);
@@ -140,7 +191,6 @@ public class ExternalBucketProvider implements StorageProvider {
 
             System.out.println("Recherche dans bucket externe avec body JSON: " + requestBody);
 
-            // CHANGÉ : GET au lieu de POST selon Bruno
             ResponseEntity<Map> response = restTemplate.exchange(
                     searchUrl, HttpMethod.GET, requestEntity, Map.class);
 
@@ -158,9 +208,6 @@ public class ExternalBucketProvider implements StorageProvider {
         }
     }
 
-    /**
-     * Recherche privée avec authentification
-     */
     public Map<String, Object> searchFilesPrivate(String tag1, String tag2, String tag3) {
         if (studentToken == null || studentToken.isEmpty()) {
             return Map.of("error", "Token required for private search");
@@ -169,12 +216,10 @@ public class ExternalBucketProvider implements StorageProvider {
         try {
             String searchUrl = bucketBaseUrl + "/student/upload/search";
 
-            // Headers avec Bearer token
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.setBearerAuth(studentToken);
 
-            // Body JSON vide + paramètres multipart selon Bruno
             Map<String, Object> requestBody = new HashMap<>();
 
             HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
@@ -191,12 +236,8 @@ public class ExternalBucketProvider implements StorageProvider {
         }
     }
 
-    /**
-     * Test de connectivité amélioré
-     */
     public boolean testConnectivity() {
         try {
-            // Test avec recherche publique (ne nécessite pas de token)
             Map<String, Object> result = searchFiles(null, null, null);
             return !result.containsKey("error");
         } catch (Exception e) {
@@ -205,9 +246,6 @@ public class ExternalBucketProvider implements StorageProvider {
         }
     }
 
-    /**
-     * Info complète sur la configuration
-     */
     public Map<String, Object> getProviderInfo() {
         Map<String, Object> info = new HashMap<>();
         info.put("baseUrl", bucketBaseUrl);
@@ -216,16 +254,15 @@ public class ExternalBucketProvider implements StorageProvider {
         info.put("canUpload", isAvailable() && studentToken != null && !studentToken.isEmpty());
         info.put("canSearchPublic", isAvailable());
         info.put("canSearchPrivate", isAvailable() && studentToken != null && !studentToken.isEmpty());
+        info.put("canDelete", isAvailable() && studentToken != null && !studentToken.isEmpty());
         return info;
     }
 
     private String generateExternalIdNumeric() {
-        // Bruno utilise des ID numériques simples
         return String.valueOf(System.currentTimeMillis() % 100000);
     }
 
     private String extractRecipeType(String fileName) {
-        // Extraire le type de recette depuis le nom du fichier
         if (fileName.contains("dessert")) return "dessert";
         if (fileName.contains("plat")) return "main-course";
         if (fileName.contains("entree")) return "starter";
@@ -237,7 +274,6 @@ public class ExternalBucketProvider implements StorageProvider {
     }
 
     private String constructPublicUrl(Map<String, Object> responseBody) {
-        // Construire l'URL publique basée sur la réponse du bucket
         if (responseBody.containsKey("fileUrl")) {
             return (String) responseBody.get("fileUrl");
         }
@@ -248,7 +284,6 @@ public class ExternalBucketProvider implements StorageProvider {
             return bucketBaseUrl + "/public/file/" + responseBody.get("id");
         }
 
-        // Fallback générique
         return bucketBaseUrl + "/public/file/unknown";
     }
 }
