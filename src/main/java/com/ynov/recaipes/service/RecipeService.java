@@ -83,6 +83,26 @@ public class RecipeService {
         }
     }
 
+    public void deleteRecipe(Long id) {
+        Recipe recipe = getRecipeById(id);
+        recipeRepository.delete(recipe);
+        System.out.println("Recette supprimée: " + id);
+    }
+
+    public Recipe updateRecipe(Long id, RecipeRequest request) {
+        Recipe existingRecipe = getRecipeById(id);
+
+        // Mise à jour des champs modifiables
+        if (request.getDishName() != null) {
+            existingRecipe.setTitle(request.getDishName());
+        }
+        if (request.getUserName() != null) {
+            existingRecipe.setCreatedBy(request.getUserName());
+        }
+
+        return recipeRepository.save(existingRecipe);
+    }
+
     public List<Recipe> getAllRecipes() {
         return recipeRepository.findAll();
     }

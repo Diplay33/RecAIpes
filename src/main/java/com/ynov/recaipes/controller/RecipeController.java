@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
@@ -35,6 +36,33 @@ public class RecipeController {
     public ResponseEntity<RecipeResponse> getRecipeById(@PathVariable Long id) {
         Recipe recipe = recipeService.getRecipeById(id);
         return ResponseEntity.ok(mapToResponse(recipe));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Map<String, Object>> deleteRecipe(@PathVariable Long id) {
+        try {
+            recipeService.deleteRecipe(id);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "Recette supprimée avec succès",
+                    "id", id
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "error", "Erreur lors de la suppression: " + e.getMessage()
+            ));
+        }
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<RecipeResponse> updateRecipe(@PathVariable Long id, @RequestBody RecipeRequest request) {
+        try {
+            Recipe updatedRecipe = recipeService.updateRecipe(id, request);
+            return ResponseEntity.ok(mapToResponse(updatedRecipe));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
     }
 
     private RecipeResponse mapToResponse(Recipe recipe) {

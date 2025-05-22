@@ -47,23 +47,27 @@ public class ExternalBucketProvider implements StorageProvider {
         try {
             String uploadUrl = bucketBaseUrl + "/student/upload";
 
-            // Préparer les headers avec authentification Bearer
+            // Préparer les headers SANS Content-Type (laissé automatique pour multipart)
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.MULTIPART_FORM_DATA);
-            headers.setBearerAuth(studentToken);  // NOUVEAU : Bearer token
+            headers.setBearerAuth(studentToken);  // Bearer token comme dans Bruno
+            // NE PAS définir Content-Type - Spring le fait automatiquement pour multipart
 
-            // Préparer le body multipart selon le format Bruno
+            // Préparer le body multipart selon le format Bruno EXACT
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("file", new FileSystemResource(file));
-            body.add("idExterne", generateExternalId());
+            body.add("idExterne", generateExternalIdNumeric());  // CHANGÉ : entier comme Bruno
 
-            // Tags spécifiques aux recettes
-            body.add("tag1", "recipe"); // Type d'objet
-            body.add("tag2", extractRecipeType(file.getName())); // Type de recette
-            body.add("tag3", getCurrentDate()); // Date de création
+            // Tags selon Bruno (peuvent être vides)
+            body.add("tag1", "recipe");
+            body.add("tag2", extractRecipeType(file.getName()));
+            body.add("tag3", getCurrentDate());
 
             HttpEntity<MultiValueMap<String, Object>> requestEntity =
                     new HttpEntity<>(body, headers);
+
+            System.out.println("🚀 Upload vers bucket externe: " + uploadUrl);
+            System.out.println("📦 Token: " + (studentToken != null ? "✅ Présent" : "❌ Manquant"));
+            System.out.println("📎 Fichier: " + file.getName() + " (" + file.length() + " bytes)");
 
             // Envoyer la requête
             ResponseEntity<Map> response = restTemplate.postForEntity(
@@ -71,7 +75,7 @@ public class ExternalBucketProvider implements StorageProvider {
 
             if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
                 Map<String, Object> responseBody = response.getBody();
-                System.out.println("Upload réussi vers bucket externe: " + responseBody);
+                System.out.println("✅ Upload réussi vers bucket externe: " + responseBody);
 
                 // Construire l'URL publique basée sur la réponse
                 return constructPublicUrl(responseBody);
@@ -80,7 +84,7 @@ public class ExternalBucketProvider implements StorageProvider {
             }
 
         } catch (Exception e) {
-            System.err.println("External bucket upload failed: " + e.getMessage());
+            System.err.println("❌ External bucket upload failed: " + e.getMessage());
             throw new RuntimeException("External bucket upload failed: " + e.getMessage(), e);
         }
     }
@@ -215,8 +219,9 @@ public class ExternalBucketProvider implements StorageProvider {
         return info;
     }
 
-    private String generateExternalId() {
-        return "recipe-" + UUID.randomUUID().toString().substring(0, 8);
+    private String generateExternalIdNumeric() {
+        // Bruno utilise des ID numériques simples
+        return String.valueOf(System.currentTimeMillis() % 100000);
     }
 
     private String extractRecipeType(String fileName) {

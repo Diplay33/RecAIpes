@@ -23,8 +23,14 @@ public class BucketTestController {
     public ResponseEntity<Map<String, Object>> getStorageInfo() {
         Map<String, Object> info = new HashMap<>();
 
-        // Info générale
-        info.put("activeStorageType", storageService.getActiveStorageType());
+        // Info générale - Méthode simplifiée pour éviter l'erreur
+        String activeType = "Unknown";
+        if (storageService.isExternalBucketAvailable()) {
+            activeType = "External Bucket";
+        } else if (storageService.isLocalStorageAvailable()) {
+            activeType = "Local";
+        }
+        info.put("activeStorageType", activeType);
 
         // Bucket externe
         ExternalBucketProvider externalProvider = storageService.getExternalBucketProvider();
@@ -49,32 +55,27 @@ public class BucketTestController {
     }
 
     /**
-     * Test de connectivité du bucket externe
+     * Test du token étudiant
      */
-    @GetMapping("/test-external")
-    public ResponseEntity<Map<String, Object>> testExternalBucket() {
+    @GetMapping("/test-token")
+    public ResponseEntity<Map<String, Object>> testStudentToken() {
         ExternalBucketProvider provider = storageService.getExternalBucketProvider();
 
         if (provider == null) {
             return ResponseEntity.ok(Map.of(
                     "success", false,
-                    "message", "External bucket provider not available"
+                    "message", "External bucket provider not configured"
             ));
         }
 
-        try {
-            boolean connected = provider.testConnectivity();
-            return ResponseEntity.ok(Map.of(
-                    "success", connected,
-                    "message", connected ? "Bucket externe accessible" : "Bucket externe non accessible",
-                    "provider", "ExternalBucketProvider"
-            ));
-        } catch (Exception e) {
-            return ResponseEntity.ok(Map.of(
-                    "success", false,
-                    "message", "Erreur de connectivité: " + e.getMessage()
-            ));
-        }
+        Map<String, Object> providerInfo = provider.getProviderInfo();
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "providerInfo", providerInfo,
+                "tokenPresent", providerInfo.get("hasToken"),
+                "canUpload", providerInfo.get("canUpload")
+        ));
     }
 
     /**
