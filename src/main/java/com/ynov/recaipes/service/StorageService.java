@@ -55,7 +55,8 @@ public class StorageService {
         System.out.println("Using storage provider: " + selectedProvider.getClass().getSimpleName());
 
         try {
-            return selectedProvider.uploadFile(file, contentType);
+            String result = selectedProvider.uploadFile(file, contentType);
+            return result;
         } catch (Exception e) {
             System.err.println("Upload failed with " + selectedProvider.getClass().getSimpleName() +
                     ": " + e.getMessage());
@@ -63,7 +64,14 @@ public class StorageService {
             if (orderedProviders.size() > 1) {
                 StorageProvider fallbackProvider = orderedProviders.get(1);
                 System.out.println("Trying fallback provider: " + fallbackProvider.getClass().getSimpleName());
-                return fallbackProvider.uploadFile(file, contentType);
+                String result = fallbackProvider.uploadFile(file, contentType);
+
+                // Si le résultat contient "||", extraire juste l'URL pour le provider local
+                if (fallbackProvider instanceof LocalStorageProvider && result.contains("||")) {
+                    result = result.split("\\|\\|")[0];
+                }
+
+                return result;
             }
 
             throw new RuntimeException("All storage providers failed", e);
@@ -125,8 +133,15 @@ public class StorageService {
      * Vérifie si l'URL est une URL externe qu'on ne peut/veut pas supprimer
      */
     public boolean isExternalNonDeletableUrl(String fileUrl) {
+        if (fileUrl == null) {
+            return false;
+        }
+
         // URLs OpenAI DALL-E
-        if (fileUrl.contains("oaidalleapiprodscus.blob.core.windows.net")) {
+        if (fileUrl.contains("oaidalleapiprodscus") ||
+                fileUrl.contains("blob.core.windows.net") ||
+                fileUrl.contains("openai")) {
+            System.out.println("⚠️ URL DALL-E détectée comme non supprimable");
             return true;
         }
 
@@ -134,6 +149,7 @@ public class StorageService {
         if (fileUrl.contains("amazonaws.com") ||
                 fileUrl.contains("cloudfront.net") ||
                 fileUrl.contains("googleapis.com")) {
+            System.out.println("⚠️ URL externe détectée comme non supprimable");
             return true;
         }
 

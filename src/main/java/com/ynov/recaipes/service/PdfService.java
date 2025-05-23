@@ -111,15 +111,38 @@ public class PdfService {
 
             // Enregistrer les métadonnées
             File pdfFile = new File(filePath);
-            String s3Url = storageService.uploadFile(pdfFile, "application/pdf");
+            String uploadResult = storageService.uploadFile(pdfFile, "application/pdf");
+
+            // Extraire l'URL et l'ID interne du serveur
+            String s3Url;
+            String internalServerId = null;
+
+            if (uploadResult.contains("||")) {
+                String[] parts = uploadResult.split("\\|\\|");
+                s3Url = parts[0];
+                internalServerId = parts.length > 1 ? parts[1] : null;
+                System.out.println("🔑 ID interne du serveur extrait: " + internalServerId);
+            } else {
+                s3Url = uploadResult;
+            }
+
             recipe.setPdfUrl(s3Url);
 
-            // NOUVEAU : Extraire et stocker l'ID externe pour faciliter la suppression
-            if (s3Url.contains("/student-bucket/") && s3Url.contains("recipe_" + recipe.getId())) {
-                // Pour une URL comme: http://141.94.115.201/student-bucket/pdfs/uuid-recipe_1.pdf
-                // On peut stocker le numéro de recette comme ID externe
-                recipe.setExternalId(String.valueOf(recipe.getId()));
-                System.out.println("💾 ID externe stocké dans la recette: " + recipe.getId());
+            // Stocker l'ID interne du serveur pour la suppression
+            if (internalServerId != null && !internalServerId.isEmpty()) {
+                recipe.setExternalId(internalServerId);
+                System.out.println("💾 ID interne du serveur stocké dans la recette: " + internalServerId);
+            } else if (s3Url.contains("/student-bucket/") && s3Url.contains("recipe_" + recipe.getId())) {
+                // Fallback sur l'ancien mécanisme
+                String fileName2 = s3Url.substring(s3Url.lastIndexOf('/') + 1);
+                if (fileName2.contains("-recipe_")) {
+                    String uuid = fileName2.split("-recipe_")[0];
+                    recipe.setExternalId(uuid);
+                    System.out.println("💾 UUID externe stocké dans la recette: " + uuid);
+                } else {
+                    recipe.setExternalId(String.valueOf(recipe.getId()));
+                    System.out.println("💾 ID externe stocké dans la recette: " + recipe.getId());
+                }
             }
 
             PdfMetadata metadata = new PdfMetadata();

@@ -53,7 +53,10 @@ public class ExternalBucketProvider implements StorageProvider {
 
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("file", new FileSystemResource(file));
-            body.add("idExterne", generateExternalIdNumeric());
+
+            // Notre identifiant externe personnalisé
+            String customExternalId = generateExternalIdNumeric();
+            body.add("idExterne", customExternalId);
 
             body.add("tag1", "recipe");
             body.add("tag2", extractRecipeType(file.getName()));
@@ -73,11 +76,22 @@ public class ExternalBucketProvider implements StorageProvider {
                 Map<String, Object> responseBody = response.getBody();
                 System.out.println("✅ Upload réussi vers bucket externe: " + responseBody);
 
-                return constructPublicUrl(responseBody);
+                // CRUCIAL: Stocker l'ID interne du serveur qui est retourné dans la réponse
+                String internalServerId = null;
+                if (responseBody.containsKey("id")) {
+                    internalServerId = String.valueOf(responseBody.get("id"));
+                    System.out.println("🔑 ID interne du serveur: " + internalServerId +
+                            " (À utiliser pour la suppression)");
+                }
+
+                // Construire l'URL publique
+                String publicUrl = constructPublicUrl(responseBody);
+
+                // On retourne les deux valeurs, séparées par un délimiteur spécial
+                return publicUrl + "||" + internalServerId;
             } else {
                 throw new RuntimeException("Failed to upload to external bucket: " + response.getStatusCode());
             }
-
         } catch (Exception e) {
             System.err.println("❌ External bucket upload failed: " + e.getMessage());
             throw new RuntimeException("External bucket upload failed: " + e.getMessage(), e);
@@ -118,74 +132,65 @@ public class ExternalBucketProvider implements StorageProvider {
         try {
             System.out.println("🚀 Tentative de suppression avancée pour: " + fileUrl);
 
-            // 1. Extraire le nom de fichier depuis l'URL
-            String fileName = null;
-            if (fileUrl.contains("/")) {
-                String[] parts = fileUrl.split("/");
-                fileName = parts[parts.length - 1];
-            }
+            // 1. Essayer d'abord d'utiliser l'ID stocké dans la recette
+            String recipeExternalId = null;
 
-            if (fileName == null) {
-                System.err.println("❌ Impossible d'extraire le nom du fichier depuis: " + fileUrl);
-                return false;
-            }
+            // 2. Chercher parmi les fichiers uploadés si l'ID n'est pas disponible
+            if (recipeExternalId == null) {
+                Map<String, Object> searchResults = searchFilesPrivate(null, null, null);
 
-            System.out.println("📄 Nom de fichier extrait: " + fileName);
+                if (searchResults != null && searchResults.containsKey("files")) {
+                    List<Map<String, Object>> files = (List<Map<String, Object>>) searchResults.get("files");
+                    System.out.println("🔍 Recherche parmi " + files.size() + " fichiers...");
 
-            // 2. Rechercher l'ID interne exact dans les résultats privés
-            Map<String, Object> searchResults = searchFilesPrivate(null, null, null);
-            String fileId = null;
+                    // Extraire le nom du fichier de l'URL
+                    String fileName = fileUrl.substring(fileUrl.lastIndexOf('/') + 1);
+                    System.out.println("📄 Nom de fichier à chercher: " + fileName);
 
-            if (searchResults != null && searchResults.containsKey("files")) {
-                List<Map<String, Object>> files = (List<Map<String, Object>>) searchResults.get("files");
-                System.out.println("🔍 Recherche parmi " + files.size() + " fichiers...");
-
-                for (Map<String, Object> file : files) {
-                    String currentFileName = (String) file.get("fileName");
-                    String currentId = String.valueOf(file.get("id"));
-
-                    // Vérifier par nom exact ou par correspondance partielle
-                    if (currentFileName != null &&
-                            (currentFileName.equals(fileName) || currentFileName.contains(fileName) ||
-                                    fileName.contains(currentFileName))) {
-                        fileId = currentId;
-                        System.out.println("✅ Fichier trouvé! ID interne: " + fileId +
-                                " pour fichier: " + currentFileName);
-                        break;
+                    for (Map<String, Object> file : files) {
+                        String serverFileName = (String) file.get("fileName");
+                        if (serverFileName != null &&
+                                (serverFileName.equals(fileName) ||
+                                        fileName.contains(serverFileName) ||
+                                        serverFileName.contains(fileName))) {
+                            recipeExternalId = String.valueOf(file.get("id"));
+                            System.out.println("🔍 ID trouvé dans les fichiers uploadés: " + recipeExternalId);
+                            break;
+                        }
                     }
                 }
             }
 
-            // 3. Si aucun ID trouvé, fallback sur l'ancienne méthode
-            if (fileId == null) {
-                System.out.println("⚠️ Aucun ID interne trouvé, fallback sur extraction ID...");
-                fileId = extractFileIdFromUrl(fileUrl);
+            // 3. Si toujours pas d'ID, fallback sur l'extraction depuis l'URL
+            if (recipeExternalId == null) {
+                recipeExternalId = extractFileIdFromUrl(fileUrl);
+                System.out.println("⚠️ Fallback sur extraction d'ID: " + recipeExternalId);
             }
 
-            if (fileId == null || "unknown".equals(fileId)) {
+            if (recipeExternalId == null) {
                 System.err.println("❌ Impossible de déterminer l'ID pour: " + fileUrl);
                 return false;
             }
 
-            // 4. Supprimer avec l'ID trouvé
-            String deleteUrl = bucketBaseUrl + "/student/upload/" + fileId;
+            // 4. Suppression avec l'ID trouvé
+            String deleteUrl = bucketBaseUrl + "/student/upload/" + recipeExternalId;
 
             HttpHeaders headers = new HttpHeaders();
             headers.setBearerAuth(studentToken);
-
             HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
 
-            System.out.println("🗑️ Suppression du fichier ID: " + fileId + " URL: " + deleteUrl);
+            System.out.println("🗑️ Suppression avec ID: " + recipeExternalId);
 
             ResponseEntity<Map> response = restTemplate.exchange(
                     deleteUrl, HttpMethod.DELETE, requestEntity, Map.class);
 
             boolean success = response.getStatusCode().is2xxSuccessful();
-            if (success) {
-                System.out.println("✅ Suppression réussie pour ID: " + fileId);
+            System.out.println(success ? "✅ Suppression réussie" : "❌ Échec de suppression");
 
-                // 5. Vérifier si le fichier est réellement inaccessible
+            // 5. Vérifier si le fichier est réellement inaccessible
+            if (success) {
                 try {
+                    Thread.sleep(500); // Petit délai pour la propagation
                     HttpHeaders verifyHeaders = new HttpHeaders();
                     HttpEntity<Void> verifyRequest = new HttpEntity<>(verifyHeaders);
                     ResponseEntity<byte[]> verifyResponse = restTemplate.exchange(
@@ -199,15 +204,9 @@ public class ExternalBucketProvider implements StorageProvider {
                     // Une erreur est attendue si le fichier a été correctement supprimé
                     System.out.println("✅ Vérification: Le fichier n'est plus accessible");
                 }
-
-                return true;
-            } else {
-                System.err.println("❌ Échec de la suppression. Statut: " + response.getStatusCode());
-                if (response.getBody() != null) {
-                    System.err.println("Détails: " + response.getBody());
-                }
-                return false;
             }
+
+            return success;
         } catch (Exception e) {
             String errorMsg = e.getMessage();
 
@@ -223,7 +222,6 @@ public class ExternalBucketProvider implements StorageProvider {
             }
 
             System.err.println("❌ Erreur lors de la suppression du fichier: " + errorMsg);
-            e.printStackTrace(); // Ajouter la stack trace pour plus de détails
             return false;
         }
     }
@@ -416,7 +414,7 @@ public class ExternalBucketProvider implements StorageProvider {
 
         // Priorité 5: ID fourni
         if (responseBody.containsKey("id")) {
-            String id = (String) responseBody.get("id");
+            String id = String.valueOf(responseBody.get("id"));
             String url = bucketBaseUrl + "/public/file/" + id;
             System.out.println("✅ URL construite depuis ID: " + url);
             return url;

@@ -30,7 +30,8 @@ public class LocalStorageProvider implements StorageProvider {
 
             Files.copy(file.toPath(), destinationFile, StandardCopyOption.REPLACE_EXISTING);
 
-            return "file://" + destinationFile.toAbsolutePath();
+            // Ajout de l'ID fictif pour la compatibilité avec le nouveau format
+            return "file://" + destinationFile.toAbsolutePath() + "||local";
         } catch (IOException e) {
             throw new RuntimeException("Failed to store file locally", e);
         }
@@ -52,6 +53,9 @@ public class LocalStorageProvider implements StorageProvider {
             // Extraire le chemin du fichier depuis l'URL file://
             if (fileUrl.startsWith("file://")) {
                 String filePath = fileUrl.substring(7); // Enlever "file://"
+                if (filePath.contains("||")) {
+                    filePath = filePath.split("\\|\\|")[0]; // Enlever l'ID fictif
+                }
                 Path path = Paths.get(filePath);
 
                 if (Files.exists(path)) {
