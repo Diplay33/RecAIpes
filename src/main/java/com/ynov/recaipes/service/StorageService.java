@@ -166,11 +166,19 @@ public class StorageService {
             return results;
         }
 
-        for (String fileUrl : fileUrls) {
+        // Déduplication des URLs
+        Set<String> uniqueUrls = new HashSet<>(fileUrls);
+        System.out.println("🗑️ Suppression de " + uniqueUrls.size() + " fichier(s) unique(s) du stockage...");
+
+        for (String fileUrl : uniqueUrls) {
             if (fileUrl != null && !fileUrl.isEmpty()) {
                 results.put(fileUrl, deleteFile(fileUrl));
             }
         }
+
+        // Logs des résultats
+        long successCount = results.values().stream().filter(success -> success).count();
+        System.out.println("📊 Suppression terminée: " + successCount + "/" + uniqueUrls.size() + " fichiers supprimés");
 
         return results;
     }

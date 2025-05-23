@@ -12,10 +12,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -90,8 +87,8 @@ public class RecipeService {
         try {
             Recipe recipe = getRecipeById(id);
 
-            // NOUVEAU : Collecter les URLs des fichiers à supprimer
-            List<String> filesToDelete = new ArrayList<>();
+            // NOUVEAU : Collecter les URLs uniques des fichiers à supprimer
+            Set<String> filesToDelete = new HashSet<>();
 
             if (recipe.getImageUrl() != null && !recipe.getImageUrl().isEmpty()) {
                 filesToDelete.add(recipe.getImageUrl());
@@ -120,23 +117,9 @@ public class RecipeService {
             // 2. Supprimer la recette de la base de données
             recipeRepository.delete(recipe);
 
-            // 3. NOUVEAU : Supprimer les fichiers du stockage
+            // 3. Supprimer les fichiers du stockage
             if (!filesToDelete.isEmpty()) {
-                System.out.println("🗑️ Suppression de " + filesToDelete.size() + " fichier(s) du stockage...");
-
-                Map<String, Boolean> deletionResults = storageService.deleteFiles(filesToDelete);
-
-                // Log des résultats
-                deletionResults.forEach((fileUrl, success) -> {
-                    if (success) {
-                        System.out.println("✅ Fichier supprimé: " + fileUrl);
-                    } else {
-                        System.err.println("❌ Échec suppression: " + fileUrl);
-                    }
-                });
-
-                long successCount = deletionResults.values().stream().mapToLong(success -> success ? 1 : 0).sum();
-                System.out.println("📊 Suppression terminée: " + successCount + "/" + filesToDelete.size() + " fichiers supprimés");
+                Map<String, Boolean> deletionResults = storageService.deleteFiles(new ArrayList<>(filesToDelete));
             }
 
             System.out.println("✅ Recette supprimée avec succès: " + id);
