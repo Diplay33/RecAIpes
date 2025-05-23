@@ -71,7 +71,7 @@ public class StorageService {
     }
 
     /**
-     * NOUVEAU : Supprimer un fichier du stockage
+     * NOUVEAU : Supprimer un fichier du stockage avec validation
      */
     public boolean deleteFile(String fileUrl) {
         if (fileUrl == null || fileUrl.isEmpty()) {
@@ -81,6 +81,12 @@ public class StorageService {
 
         System.out.println("🗑️ Tentative de suppression du fichier: " + fileUrl);
 
+        // Ignorer les URLs externes qui ne sont pas sur nos buckets
+        if (isExternalNonDeletableUrl(fileUrl)) {
+            System.out.println("⚠️ Fichier externe non supprimable ignoré: " + fileUrl);
+            return true; // On considère comme "réussi" car on ne peut pas/ne veut pas le supprimer
+        }
+
         // Identifier le type de stockage basé sur l'URL
         StorageProvider targetProvider = null;
 
@@ -88,7 +94,11 @@ public class StorageService {
             // Fichier local
             targetProvider = getLocalProvider();
         } else if (fileUrl.contains("141.94.115.201") || fileUrl.contains("/public/file/")) {
-            // Bucket externe
+            // Bucket externe - vérifier que ce n'est pas "unknown"
+            if (fileUrl.contains("/unknown")) {
+                System.err.println("⚠️ Fichier avec ID 'unknown' - probablement pas uploadé correctement");
+                return true; // Pas d'erreur, mais pas de suppression nécessaire
+            }
             targetProvider = getExternalBucketProvider();
         }
 
@@ -109,6 +119,25 @@ public class StorageService {
             System.err.println("❌ Aucun provider disponible pour supprimer: " + fileUrl);
             return false;
         }
+    }
+
+    /**
+     * Vérifie si l'URL est une URL externe qu'on ne peut/veut pas supprimer
+     */
+    public boolean isExternalNonDeletableUrl(String fileUrl) {
+        // URLs OpenAI DALL-E
+        if (fileUrl.contains("oaidalleapiprodscus.blob.core.windows.net")) {
+            return true;
+        }
+
+        // URLs d'autres services externes
+        if (fileUrl.contains("amazonaws.com") ||
+                fileUrl.contains("cloudfront.net") ||
+                fileUrl.contains("googleapis.com")) {
+            return true;
+        }
+
+        return false;
     }
 
     /**

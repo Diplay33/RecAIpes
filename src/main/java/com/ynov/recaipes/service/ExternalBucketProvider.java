@@ -10,6 +10,7 @@ import org.springframework.core.io.FileSystemResource;
 
 import java.io.File;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -115,13 +116,58 @@ public class ExternalBucketProvider implements StorageProvider {
         }
 
         try {
-            // Extraire l'ID du fichier depuis l'URL
-            String fileId = extractFileIdFromUrl(fileUrl);
-            if (fileId == null || "unknown".equals(fileId)) {
-                System.err.println("❌ ID de fichier invalide ou 'unknown': " + fileUrl);
+            System.out.println("🚀 Tentative de suppression avancée pour: " + fileUrl);
+
+            // 1. Extraire le nom de fichier depuis l'URL
+            String fileName = null;
+            if (fileUrl.contains("/")) {
+                String[] parts = fileUrl.split("/");
+                fileName = parts[parts.length - 1];
+            }
+
+            if (fileName == null) {
+                System.err.println("❌ Impossible d'extraire le nom du fichier depuis: " + fileUrl);
                 return false;
             }
 
+            System.out.println("📄 Nom de fichier extrait: " + fileName);
+
+            // 2. Rechercher l'ID interne exact dans les résultats privés
+            Map<String, Object> searchResults = searchFilesPrivate(null, null, null);
+            String fileId = null;
+
+            if (searchResults != null && searchResults.containsKey("files")) {
+                List<Map<String, Object>> files = (List<Map<String, Object>>) searchResults.get("files");
+                System.out.println("🔍 Recherche parmi " + files.size() + " fichiers...");
+
+                for (Map<String, Object> file : files) {
+                    String currentFileName = (String) file.get("fileName");
+                    String currentId = String.valueOf(file.get("id"));
+
+                    // Vérifier par nom exact ou par correspondance partielle
+                    if (currentFileName != null &&
+                            (currentFileName.equals(fileName) || currentFileName.contains(fileName) ||
+                                    fileName.contains(currentFileName))) {
+                        fileId = currentId;
+                        System.out.println("✅ Fichier trouvé! ID interne: " + fileId +
+                                " pour fichier: " + currentFileName);
+                        break;
+                    }
+                }
+            }
+
+            // 3. Si aucun ID trouvé, fallback sur l'ancienne méthode
+            if (fileId == null) {
+                System.out.println("⚠️ Aucun ID interne trouvé, fallback sur extraction ID...");
+                fileId = extractFileIdFromUrl(fileUrl);
+            }
+
+            if (fileId == null || "unknown".equals(fileId)) {
+                System.err.println("❌ Impossible de déterminer l'ID pour: " + fileUrl);
+                return false;
+            }
+
+            // 4. Supprimer avec l'ID trouvé
             String deleteUrl = bucketBaseUrl + "/student/upload/" + fileId;
 
             HttpHeaders headers = new HttpHeaders();
@@ -129,22 +175,39 @@ public class ExternalBucketProvider implements StorageProvider {
 
             HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
 
-            System.out.println("🗑️ Suppression du fichier: " + deleteUrl);
+            System.out.println("🗑️ Suppression du fichier ID: " + fileId + " URL: " + deleteUrl);
 
             ResponseEntity<Map> response = restTemplate.exchange(
                     deleteUrl, HttpMethod.DELETE, requestEntity, Map.class);
 
-            if (response.getStatusCode().is2xxSuccessful()) {
-                System.out.println("✅ Fichier supprimé avec succès du bucket externe");
+            boolean success = response.getStatusCode().is2xxSuccessful();
+            if (success) {
+                System.out.println("✅ Suppression réussie pour ID: " + fileId);
+
+                // 5. Vérifier si le fichier est réellement inaccessible
+                try {
+                    HttpHeaders verifyHeaders = new HttpHeaders();
+                    HttpEntity<Void> verifyRequest = new HttpEntity<>(verifyHeaders);
+                    ResponseEntity<byte[]> verifyResponse = restTemplate.exchange(
+                            fileUrl, HttpMethod.HEAD, verifyRequest, byte[].class);
+
+                    if (verifyResponse.getStatusCode().is2xxSuccessful()) {
+                        System.err.println("⚠️ ATTENTION: Le fichier semble toujours accessible à: " + fileUrl);
+                        System.err.println("⚠️ La suppression a réussi côté API mais le fichier reste accessible");
+                    }
+                } catch (Exception e) {
+                    // Une erreur est attendue si le fichier a été correctement supprimé
+                    System.out.println("✅ Vérification: Le fichier n'est plus accessible");
+                }
+
                 return true;
             } else {
-                System.err.println("❌ Échec de la suppression: " + response.getStatusCode());
+                System.err.println("❌ Échec de la suppression. Statut: " + response.getStatusCode());
                 if (response.getBody() != null) {
                     System.err.println("Détails: " + response.getBody());
                 }
                 return false;
             }
-
         } catch (Exception e) {
             String errorMsg = e.getMessage();
 
@@ -160,6 +223,7 @@ public class ExternalBucketProvider implements StorageProvider {
             }
 
             System.err.println("❌ Erreur lors de la suppression du fichier: " + errorMsg);
+            e.printStackTrace(); // Ajouter la stack trace pour plus de détails
             return false;
         }
     }
