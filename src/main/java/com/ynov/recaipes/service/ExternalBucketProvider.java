@@ -117,8 +117,8 @@ public class ExternalBucketProvider implements StorageProvider {
         try {
             // Extraire l'ID du fichier depuis l'URL
             String fileId = extractFileIdFromUrl(fileUrl);
-            if (fileId == null) {
-                System.err.println("❌ Impossible d'extraire l'ID du fichier depuis l'URL: " + fileUrl);
+            if (fileId == null || "unknown".equals(fileId)) {
+                System.err.println("❌ ID de fichier invalide ou 'unknown': " + fileUrl);
                 return false;
             }
 
@@ -139,37 +139,81 @@ public class ExternalBucketProvider implements StorageProvider {
                 return true;
             } else {
                 System.err.println("❌ Échec de la suppression: " + response.getStatusCode());
+                if (response.getBody() != null) {
+                    System.err.println("Détails: " + response.getBody());
+                }
                 return false;
             }
 
         } catch (Exception e) {
-            System.err.println("❌ Erreur lors de la suppression du fichier: " + e.getMessage());
+            String errorMsg = e.getMessage();
+
+            // Gérer les erreurs spécifiques
+            if (errorMsg != null) {
+                if (errorMsg.contains("Aucun élément avec l'ID")) {
+                    System.err.println("⚠️ Fichier déjà supprimé ou inexistant: " + fileUrl);
+                    return true; // Considérer comme réussi si déjà supprimé
+                } else if (errorMsg.contains("400")) {
+                    System.err.println("❌ Requête invalide pour la suppression: " + errorMsg);
+                    return false;
+                }
+            }
+
+            System.err.println("❌ Erreur lors de la suppression du fichier: " + errorMsg);
             return false;
         }
     }
 
     /**
-     * Extraire l'ID du fichier depuis l'URL
+     * Extraire l'ID du fichier depuis l'URL pour la suppression
      */
     private String extractFileIdFromUrl(String fileUrl) {
         if (fileUrl == null || fileUrl.isEmpty()) {
             return null;
         }
 
-        // Format attendu: http://141.94.115.201/public/file/{id}
+        System.out.println("🔍 Extraction ID depuis URL: " + fileUrl);
+
+        // Cas 1: URL avec /public/file/{id}
         if (fileUrl.contains("/public/file/")) {
             String[] parts = fileUrl.split("/public/file/");
             if (parts.length > 1) {
-                return parts[1];
+                String id = parts[1];
+                System.out.println("✅ ID extrait depuis /public/file/: " + id);
+                return id;
             }
         }
 
-        // Si l'URL ne correspond pas au format attendu, essayer d'extraire le dernier segment
-        String[] segments = fileUrl.split("/");
-        if (segments.length > 0) {
-            return segments[segments.length - 1];
+        // Cas 2: URL directe du student-bucket (ex: student-bucket/pdfs/uuid-filename.pdf)
+        if (fileUrl.contains("/student-bucket/")) {
+            // Pour les URLs directes, on va essayer d'utiliser le nom du fichier
+            String[] parts = fileUrl.split("/");
+            if (parts.length > 0) {
+                String fileName = parts[parts.length - 1]; // Dernier segment
+                // Extraire juste le nom sans l'extension ni l'UUID
+                if (fileName.contains("-recipe_")) {
+                    // Format: uuid-recipe_X.pdf -> extraire le numéro X
+                    String[] recipeParts = fileName.split("-recipe_");
+                    if (recipeParts.length > 1) {
+                        String recipeNum = recipeParts[1].replace(".pdf", "");
+                        System.out.println("✅ ID extrait depuis nom de fichier recette: " + recipeNum);
+                        return recipeNum;
+                    }
+                }
+                System.out.println("✅ ID extrait depuis nom de fichier complet: " + fileName);
+                return fileName;
+            }
         }
 
+        // Cas 3: Si l'URL ne correspond à aucun format, extraire le dernier segment
+        String[] segments = fileUrl.split("/");
+        if (segments.length > 0) {
+            String lastSegment = segments[segments.length - 1];
+            System.out.println("✅ ID extrait depuis dernier segment: " + lastSegment);
+            return lastSegment;
+        }
+
+        System.err.println("❌ Impossible d'extraire un ID depuis l'URL: " + fileUrl);
         return null;
     }
 
@@ -274,16 +318,48 @@ public class ExternalBucketProvider implements StorageProvider {
     }
 
     private String constructPublicUrl(Map<String, Object> responseBody) {
-        if (responseBody.containsKey("fileUrl")) {
-            return (String) responseBody.get("fileUrl");
-        }
-        if (responseBody.containsKey("fileName")) {
-            return bucketBaseUrl + "/public/file/" + responseBody.get("fileName");
-        }
-        if (responseBody.containsKey("id")) {
-            return bucketBaseUrl + "/public/file/" + responseBody.get("id");
+        System.out.println("🔗 Construction URL publique depuis réponse: " + responseBody);
+
+        // Priorité 1: URL directe fournie par l'API (champ "url")
+        if (responseBody.containsKey("url")) {
+            String directUrl = (String) responseBody.get("url");
+            System.out.println("✅ URL directe trouvée dans 'url': " + directUrl);
+            return directUrl;
         }
 
+        // Priorité 2: URL directe fournie par l'API (champ "fileUrl")
+        if (responseBody.containsKey("fileUrl")) {
+            String fileUrl = (String) responseBody.get("fileUrl");
+            System.out.println("✅ URL directe trouvée dans 'fileUrl': " + fileUrl);
+            return fileUrl;
+        }
+
+        // Priorité 3: ID externe fourni
+        if (responseBody.containsKey("idExterne")) {
+            String idExterne = String.valueOf(responseBody.get("idExterne"));
+            String url = bucketBaseUrl + "/public/file/" + idExterne;
+            System.out.println("✅ URL construite depuis idExterne: " + url);
+            return url;
+        }
+
+        // Priorité 4: Nom de fichier fourni
+        if (responseBody.containsKey("fileName")) {
+            String fileName = (String) responseBody.get("fileName");
+            String url = bucketBaseUrl + "/public/file/" + fileName;
+            System.out.println("✅ URL construite depuis fileName: " + url);
+            return url;
+        }
+
+        // Priorité 5: ID fourni
+        if (responseBody.containsKey("id")) {
+            String id = (String) responseBody.get("id");
+            String url = bucketBaseUrl + "/public/file/" + id;
+            System.out.println("✅ URL construite depuis ID: " + url);
+            return url;
+        }
+
+        System.err.println("❌ Impossible de construire l'URL publique depuis la réponse");
+        System.err.println("🔍 Clés disponibles: " + responseBody.keySet());
         return bucketBaseUrl + "/public/file/unknown";
     }
 }

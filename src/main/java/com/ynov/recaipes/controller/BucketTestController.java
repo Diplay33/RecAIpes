@@ -208,6 +208,38 @@ public class BucketTestController {
     }
 
     /**
+     * NOUVEAU : Trouver l'ID externe d'un fichier uploadé
+     */
+    @GetMapping("/find-external-id")
+    public ResponseEntity<Map<String, Object>> findExternalId(@RequestParam String fileName) {
+        ExternalBucketProvider provider = storageService.getExternalBucketProvider();
+
+        if (provider == null) {
+            return ResponseEntity.ok(Map.of(
+                    "success", false,
+                    "error", "External bucket provider not available"
+            ));
+        }
+
+        try {
+            // Recherche privée pour trouver nos fichiers
+            Map<String, Object> results = provider.searchFilesPrivate(null, null, null);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "searchResults", results,
+                    "searchedFileName", fileName,
+                    "message", "Cherchez l'ID externe dans les résultats pour le fichier: " + fileName
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.ok(Map.of(
+                    "success", false,
+                    "error", "Erreur lors de la recherche: " + e.getMessage()
+            ));
+        }
+    }
+
+    /**
      * Informations détaillées sur le provider externe
      */
     @GetMapping("/external-info")

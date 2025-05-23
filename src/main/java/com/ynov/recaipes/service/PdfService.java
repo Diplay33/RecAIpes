@@ -114,6 +114,14 @@ public class PdfService {
             String s3Url = storageService.uploadFile(pdfFile, "application/pdf");
             recipe.setPdfUrl(s3Url);
 
+            // NOUVEAU : Extraire et stocker l'ID externe pour faciliter la suppression
+            if (s3Url.contains("/student-bucket/") && s3Url.contains("recipe_" + recipe.getId())) {
+                // Pour une URL comme: http://141.94.115.201/student-bucket/pdfs/uuid-recipe_1.pdf
+                // On peut stocker le numéro de recette comme ID externe
+                recipe.setExternalId(String.valueOf(recipe.getId()));
+                System.out.println("💾 ID externe stocké dans la recette: " + recipe.getId());
+            }
+
             PdfMetadata metadata = new PdfMetadata();
             metadata.setFileName(fileName);
             metadata.setContentType("application/pdf");
