@@ -18,6 +18,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -111,7 +113,12 @@ public class PdfService {
 
             // Enregistrer les métadonnées
             File pdfFile = new File(filePath);
-            String uploadResult = storageService.uploadFile(pdfFile, "application/pdf");
+
+            // Ajout des tags personnalisés lors de l'upload
+            Map<String, String> customTags = new HashMap<>();
+            customTags.put("tag2", recipe.getTitle()); // Titre de la recette
+
+            String uploadResult = storageService.uploadFile(pdfFile, "application/pdf", customTags);
 
             // Extraire l'URL et l'ID interne du serveur
             String s3Url;

@@ -27,6 +27,10 @@ public class StorageService {
     }
 
     public String uploadFile(File file, String contentType) {
+        return uploadFile(file, contentType, null);
+    }
+
+    public String uploadFile(File file, String contentType, Map<String, String> customTags) {
         if (storageProviders.isEmpty()) {
             throw new IllegalStateException("No storage providers available");
         }
@@ -55,7 +59,9 @@ public class StorageService {
         System.out.println("Using storage provider: " + selectedProvider.getClass().getSimpleName());
 
         try {
-            String result = selectedProvider.uploadFile(file, contentType);
+            String result = customTags != null ?
+                    selectedProvider.uploadFile(file, contentType, customTags) :
+                    selectedProvider.uploadFile(file, contentType);
             return result;
         } catch (Exception e) {
             System.err.println("Upload failed with " + selectedProvider.getClass().getSimpleName() +
@@ -64,12 +70,9 @@ public class StorageService {
             if (orderedProviders.size() > 1) {
                 StorageProvider fallbackProvider = orderedProviders.get(1);
                 System.out.println("Trying fallback provider: " + fallbackProvider.getClass().getSimpleName());
-                String result = fallbackProvider.uploadFile(file, contentType);
-
-                // Si le résultat contient "||", extraire juste l'URL pour le provider local
-                if (fallbackProvider instanceof LocalStorageProvider && result.contains("||")) {
-                    result = result.split("\\|\\|")[0];
-                }
+                String result = customTags != null ?
+                        fallbackProvider.uploadFile(file, contentType, customTags) :
+                        fallbackProvider.uploadFile(file, contentType);
 
                 return result;
             }
@@ -79,7 +82,7 @@ public class StorageService {
     }
 
     /**
-     * NOUVEAU : Supprimer un fichier du stockage avec validation
+     * Supprimer un fichier du stockage
      */
     public boolean deleteFile(String fileUrl) {
         if (fileUrl == null || fileUrl.isEmpty()) {
@@ -157,7 +160,7 @@ public class StorageService {
     }
 
     /**
-     * NOUVEAU : Supprimer plusieurs fichiers
+     * Supprimer plusieurs fichiers
      */
     public Map<String, Boolean> deleteFiles(List<String> fileUrls) {
         Map<String, Boolean> results = new HashMap<>();

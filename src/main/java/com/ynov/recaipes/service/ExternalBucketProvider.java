@@ -10,6 +10,7 @@ import org.springframework.core.io.FileSystemResource;
 
 import java.io.File;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Component
 public class ExternalBucketProvider implements StorageProvider {
@@ -34,6 +35,11 @@ public class ExternalBucketProvider implements StorageProvider {
 
     @Override
     public String uploadFile(File file, String contentType) {
+        return uploadFile(file, contentType, null);
+    }
+
+    @Override
+    public String uploadFile(File file, String contentType, Map<String, String> customTags) {
         if (!isAvailable()) {
             throw new IllegalStateException("External Bucket Provider is not available");
         }
@@ -55,9 +61,18 @@ public class ExternalBucketProvider implements StorageProvider {
             String customExternalId = generateExternalIdNumeric();
             body.add("idExterne", customExternalId);
 
+            // Extraire le nom de la recette à partir du nom du fichier ou utiliser celui fourni
+            String recipeName = customTags != null && customTags.containsKey("tag2") ?
+                    customTags.get("tag2") : extractRecipeNameFromFileName(file.getName());
+
+            // tag1 = type (recipe)
             body.add("tag1", "recipe");
-            body.add("tag2", extractRecipeType(file.getName()));
-            body.add("tag3", getCurrentDate());
+
+            // tag2 = nom de la recette
+            body.add("tag2", recipeName);
+
+            // tag3 = date et heure actuelles
+            body.add("tag3", getCurrentDateWithTime());
 
             HttpEntity<MultiValueMap<String, Object>> requestEntity =
                     new HttpEntity<>(body, headers);
@@ -65,6 +80,7 @@ public class ExternalBucketProvider implements StorageProvider {
             System.out.println("🚀 Upload vers bucket externe: " + uploadUrl);
             System.out.println("📦 Token: " + (studentToken != null ? "✅ Présent" : "❌ Manquant"));
             System.out.println("📎 Fichier: " + file.getName() + " (" + file.length() + " bytes)");
+            System.out.println("🏷️ Tags: tag1=recipe, tag2=" + recipeName + ", tag3=" + getCurrentDateWithTime());
 
             ResponseEntity<Map> response = restTemplate.postForEntity(
                     uploadUrl, requestEntity, Map.class);
@@ -73,7 +89,7 @@ public class ExternalBucketProvider implements StorageProvider {
                 Map<String, Object> responseBody = response.getBody();
                 System.out.println("✅ Upload réussi vers bucket externe: " + responseBody);
 
-                // CORRECTION: Récupérer l'ID externe retourné par le serveur
+                // Récupérer l'ID externe retourné par le serveur
                 String serverId = null;
                 if (responseBody.containsKey("idExterne")) {
                     serverId = String.valueOf(responseBody.get("idExterne"));
@@ -180,6 +196,49 @@ public class ExternalBucketProvider implements StorageProvider {
                 }
             }
 
+            // Essayer les méthodes alternatives
+            List<String> idsToTry = new ArrayList<>();
+
+            // Ajouter l'ID extrait du nom de fichier
+            String extractedId = extractFileIdFromUrl(fileUrl);
+            if (extractedId != null) {
+                idsToTry.add(extractedId);
+                System.out.println("📄 ID extrait du nom de fichier: " + extractedId);
+            }
+
+            // Essayer les IDs numériques pour le fallback
+            for (int i = 0; i < 5; i++) {
+                String numericId = String.valueOf(i + 1);
+                if (!idsToTry.contains(numericId)) {
+                    idsToTry.add(numericId);
+                }
+            }
+
+            // Essayer chaque ID dans l'ordre
+            System.out.println("🔄 Tentative avec " + idsToTry.size() + " IDs possibles: " + idsToTry);
+
+            for (String id : idsToTry) {
+                try {
+                    String deleteUrl = bucketBaseUrl + "/student/upload/" + id;
+
+                    HttpHeaders headers = new HttpHeaders();
+                    headers.setBearerAuth(studentToken);
+                    HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+
+                    System.out.println("🗑️ Tentative de suppression avec ID: " + id);
+
+                    ResponseEntity<Map> response = restTemplate.exchange(
+                            deleteUrl, HttpMethod.DELETE, requestEntity, Map.class);
+
+                    if (response.getStatusCode().is2xxSuccessful()) {
+                        System.out.println("✅ Suppression réussie avec ID: " + id);
+                        return true;
+                    }
+                } catch (Exception e) {
+                    System.out.println("⚠️ Échec avec ID " + id + ": " + e.getMessage());
+                }
+            }
+
             // Le fichier est probablement déjà supprimé, vérifions
             try {
                 HttpHeaders verifyHeaders = new HttpHeaders();
@@ -205,6 +264,41 @@ public class ExternalBucketProvider implements StorageProvider {
             return false;
         }
     }
+
+    /**
+     * Extraire le nom de la recette à partir du nom du fichier
+     */
+    private String extractRecipeNameFromFileName(String fileName) {
+        // Si c'est un fichier PDF de recette (recipe_X.pdf)
+        if (fileName.contains("recipe_")) {
+            try {
+                // Extraire l'ID de la recette
+                String recipeId = fileName.split("recipe_")[1].replace(".pdf", "");
+
+                // Utiliser l'ID comme nom par défaut
+                return "Recette #" + recipeId;
+            } catch (Exception e) {
+                // En cas d'erreur, utiliser un nom générique
+                return "Recette PDF";
+            }
+        }
+
+        // Pour les autres types de fichiers, utiliser le nom sans l'extension
+        if (fileName.contains(".")) {
+            return fileName.substring(0, fileName.lastIndexOf("."));
+        }
+
+        return fileName;
+    }
+
+    /**
+     * Obtenir la date et l'heure actuelles au format "yyyy-MM-dd HH:mm:ss"
+     */
+    private String getCurrentDateWithTime() {
+        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        return java.time.LocalDateTime.now().format(formatter);
+    }
+
     /**
      * Extraire l'ID du fichier depuis l'URL pour la suppression
      */
@@ -352,10 +446,6 @@ public class ExternalBucketProvider implements StorageProvider {
         if (fileName.contains("plat")) return "main-course";
         if (fileName.contains("entree")) return "starter";
         return "general";
-    }
-
-    private String getCurrentDate() {
-        return java.time.LocalDate.now().toString();
     }
 
     private String constructPublicUrl(Map<String, Object> responseBody) {

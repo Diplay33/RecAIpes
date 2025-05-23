@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -19,6 +20,11 @@ public class LocalStorageProvider implements StorageProvider {
 
     @Override
     public String uploadFile(File file, String contentType) {
+        return uploadFile(file, contentType, null);
+    }
+
+    @Override
+    public String uploadFile(File file, String contentType, Map<String, String> customTags) {
         try {
             Path destinationDir = Paths.get(localStoragePath);
             if (!Files.exists(destinationDir)) {
