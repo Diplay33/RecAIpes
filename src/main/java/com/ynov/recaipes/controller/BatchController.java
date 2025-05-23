@@ -23,16 +23,29 @@ public class BatchController {
     @PostMapping("/menu")
     public ResponseEntity<Map<String, Object>> generateMenu(@RequestBody MenuRequest request) {
         try {
+            // Créer un nouvel ID de tâche
+            String jobId = BatchStatusController.createNewJob();
+
+            // Démarrer la génération de manière asynchrone
             CompletableFuture<List<Recipe>> future = batchService.generateCompleteMenu(
                     request.getUserName(),
                     request.getTheme()
             );
 
+            // Mettre à jour la progression pendant la génération
+            future.thenAccept(recipes -> {
+                BatchStatusController.completeJob(jobId, "Menu généré avec succès");
+            }).exceptionally(e -> {
+                BatchStatusController.failJob(jobId, e.getMessage());
+                return null;
+            });
+
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "message", "Génération du menu démarrée",
                     "type", "menu",
-                    "theme", request.getTheme()
+                    "theme", request.getTheme(),
+                    "jobId", jobId
             ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(

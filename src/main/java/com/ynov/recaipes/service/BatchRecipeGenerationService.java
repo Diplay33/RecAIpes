@@ -1,5 +1,6 @@
 package com.ynov.recaipes.service;
 
+import com.ynov.recaipes.controller.BatchStatusController;
 import com.ynov.recaipes.dto.RecipeRequest;
 import com.ynov.recaipes.model.Recipe;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ public class BatchRecipeGenerationService {
     @Async
     public CompletableFuture<List<Recipe>> generateRecipeBatch(BatchGenerationRequest request) {
         List<Recipe> generatedRecipes = new ArrayList<>();
+        String jobId = request.getJobId();
 
         try {
             System.out.println("Démarrage de la génération en chaîne de " +
@@ -30,6 +32,12 @@ public class BatchRecipeGenerationService {
 
             for (int i = 0; i < request.getRecipeRequests().size(); i++) {
                 RecipeRequest recipeRequest = request.getRecipeRequests().get(i);
+
+                // Calculer et mettre à jour la progression
+                int progress = (i * 100) / request.getRecipeRequests().size();
+                BatchStatusController.updateJobProgress(jobId, progress,
+                        "Génération de la recette " + (i + 1) + "/" +
+                                request.getRecipeRequests().size());
 
                 System.out.println("Génération de la recette " + (i + 1) + "/" +
                         request.getRecipeRequests().size() + " : " +
@@ -54,8 +62,12 @@ public class BatchRecipeGenerationService {
             System.out.println("Génération en chaîne terminée avec succès ! " +
                     generatedRecipes.size() + " recettes créées");
 
+            // Marquer la tâche comme terminée
+            BatchStatusController.completeJob(jobId, "Génération terminée avec succès");
+
         } catch (Exception e) {
             System.err.println("Erreur lors de la génération en chaîne : " + e.getMessage());
+            BatchStatusController.failJob(jobId, e.getMessage());
             throw new RuntimeException("Batch generation failed", e);
         }
 
@@ -167,6 +179,7 @@ public class BatchRecipeGenerationService {
         private String batchType;
         private Long batchId;
         private int delayBetweenRequests = 20; // secondes
+        private String jobId; // Nouvel attribut
 
         // Getters et setters
         public List<RecipeRequest> getRecipeRequests() { return recipeRequests; }
@@ -180,5 +193,7 @@ public class BatchRecipeGenerationService {
 
         public int getDelayBetweenRequests() { return delayBetweenRequests; }
         public void setDelayBetweenRequests(int delayBetweenRequests) { this.delayBetweenRequests = delayBetweenRequests; }
+        public String getJobId() { return jobId; }
+        public void setJobId(String jobId) { this.jobId = jobId; }
     }
 }
