@@ -61,9 +61,8 @@ public class ExternalBucketProvider implements StorageProvider {
             String customExternalId = generateExternalIdNumeric();
             body.add("idExterne", customExternalId);
 
-            // Extraire le nom de la recette à partir du nom du fichier ou utiliser celui fourni
-            String recipeName = customTags != null && customTags.containsKey("tag2") ?
-                    customTags.get("tag2") : extractRecipeNameFromFileName(file.getName());
+            // AMÉLIORATION: Meilleure logique pour le nom de la recette
+            String recipeName = getRecipeName(customTags, file.getName());
 
             // tag1 = type (recipe)
             body.add("tag1", "recipe");
@@ -108,6 +107,97 @@ public class ExternalBucketProvider implements StorageProvider {
             System.err.println("❌ External bucket upload failed: " + e.getMessage());
             throw new RuntimeException("External bucket upload failed: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * NOUVELLE MÉTHODE: Logique améliorée pour obtenir le nom de la recette
+     */
+    private String getRecipeName(Map<String, String> customTags, String fileName) {
+        // Priorité 1: Utiliser le titre fourni dans les customTags
+        if (customTags != null && customTags.containsKey("tag2")) {
+            String providedTitle = customTags.get("tag2");
+            if (providedTitle != null && !providedTitle.trim().isEmpty()) {
+                System.out.println("✅ Utilisation du titre fourni: " + providedTitle);
+                return providedTitle.trim();
+            } else {
+                System.out.println("⚠️ Titre fourni vide ou null dans customTags");
+            }
+        } else {
+            System.out.println("⚠️ Aucun customTags fourni ou pas de tag2");
+        }
+
+        // Priorité 2: Extraire depuis le nom de fichier de manière plus intelligente
+        String extractedName = extractRecipeNameFromFileName(fileName);
+
+        // Priorité 3: Nom par défaut basé sur la date si tout échoue
+        if (extractedName == null || extractedName.trim().isEmpty()) {
+            extractedName = "Recette du " + getCurrentDateWithTime().split(" ")[0];
+        }
+
+        System.out.println("⚠️ Utilisation du nom extrait/généré: " + extractedName);
+        return extractedName;
+    }
+
+    /**
+     * MÉTHODE AMÉLIORÉE: Extraire le nom de la recette à partir du nom du fichier
+     */
+    private String extractRecipeNameFromFileName(String fileName) {
+        if (fileName == null || fileName.trim().isEmpty()) {
+            return "Recette Sans Nom";
+        }
+
+        // Si c'est un fichier PDF de recette (recipe_X.pdf)
+        if (fileName.contains("recipe_")) {
+            try {
+                // Extraire l'ID de la recette
+                String recipeId = fileName.split("recipe_")[1].replace(".pdf", "");
+
+                // Essayer de créer un nom plus descriptif
+                return "Recette Générée #" + recipeId;
+            } catch (Exception e) {
+                System.err.println("Erreur lors de l'extraction de l'ID de recette: " + e.getMessage());
+                return "Recette PDF";
+            }
+        }
+
+        // Pour les autres types de fichiers, utiliser le nom sans l'extension
+        String nameWithoutExtension = fileName;
+        if (fileName.contains(".")) {
+            nameWithoutExtension = fileName.substring(0, fileName.lastIndexOf("."));
+        }
+
+        // Améliorer le formatage du nom
+        return formatRecipeName(nameWithoutExtension);
+    }
+
+    /**
+     * NOUVELLE MÉTHODE: Formater le nom de la recette pour qu'il soit plus lisible
+     */
+    private String formatRecipeName(String rawName) {
+        if (rawName == null || rawName.trim().isEmpty()) {
+            return "Recette Sans Nom";
+        }
+
+        // Remplacer les underscores et tirets par des espaces
+        String formatted = rawName.replace("_", " ").replace("-", " ");
+
+        // Capitaliser la première lettre de chaque mot
+        String[] words = formatted.split("\\s+");
+        StringBuilder result = new StringBuilder();
+
+        for (String word : words) {
+            if (!word.isEmpty()) {
+                if (result.length() > 0) {
+                    result.append(" ");
+                }
+                result.append(word.substring(0, 1).toUpperCase());
+                if (word.length() > 1) {
+                    result.append(word.substring(1).toLowerCase());
+                }
+            }
+        }
+
+        return result.toString();
     }
 
     @Override
@@ -263,32 +353,6 @@ public class ExternalBucketProvider implements StorageProvider {
             System.err.println("❌ Erreur générale lors de la suppression: " + e.getMessage());
             return false;
         }
-    }
-
-    /**
-     * Extraire le nom de la recette à partir du nom du fichier
-     */
-    private String extractRecipeNameFromFileName(String fileName) {
-        // Si c'est un fichier PDF de recette (recipe_X.pdf)
-        if (fileName.contains("recipe_")) {
-            try {
-                // Extraire l'ID de la recette
-                String recipeId = fileName.split("recipe_")[1].replace(".pdf", "");
-
-                // Utiliser l'ID comme nom par défaut
-                return "Recette #" + recipeId;
-            } catch (Exception e) {
-                // En cas d'erreur, utiliser un nom générique
-                return "Recette PDF";
-            }
-        }
-
-        // Pour les autres types de fichiers, utiliser le nom sans l'extension
-        if (fileName.contains(".")) {
-            return fileName.substring(0, fileName.lastIndexOf("."));
-        }
-
-        return fileName;
     }
 
     /**

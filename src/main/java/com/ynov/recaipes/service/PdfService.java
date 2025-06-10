@@ -114,9 +114,33 @@ public class PdfService {
             // Enregistrer les métadonnées
             File pdfFile = new File(filePath);
 
-            // Ajout des tags personnalisés lors de l'upload
+            // AMÉLIORATION : Préparation des tags personnalisés avec vérification du titre
             Map<String, String> customTags = new HashMap<>();
-            customTags.put("tag2", recipe.getTitle()); // Titre de la recette
+
+            // Vérifier et nettoyer le titre de la recette
+            String recipeTitle = recipe.getTitle();
+            if (recipeTitle == null || recipeTitle.trim().isEmpty()) {
+                System.err.println("⚠️ ATTENTION: Le titre de la recette est vide ou null! ID: " + recipe.getId());
+                recipeTitle = "Recette #" + recipe.getId(); // Fallback
+            } else {
+                recipeTitle = recipeTitle.trim();
+                // Limiter la longueur si nécessaire (les APIs ont souvent des limites)
+                if (recipeTitle.length() > 100) {
+                    recipeTitle = recipeTitle.substring(0, 97) + "...";
+                    System.out.println("📏 Titre de recette tronqué pour respecter les limites");
+                }
+            }
+
+            customTags.put("tag2", recipeTitle);
+
+            // Ajouter des informations supplémentaires pour le debug
+            customTags.put("tag1", "recipe"); // Type de fichier
+            customTags.put("tag3", "recipe-id-" + recipe.getId()); // ID pour référence
+
+            System.out.println("📤 Upload du PDF avec les tags suivants:");
+            System.out.println("  - tag1 (type): " + customTags.get("tag1"));
+            System.out.println("  - tag2 (titre): " + customTags.get("tag2"));
+            System.out.println("  - tag3 (ref): " + customTags.get("tag3"));
 
             String uploadResult = storageService.uploadFile(pdfFile, "application/pdf", customTags);
 

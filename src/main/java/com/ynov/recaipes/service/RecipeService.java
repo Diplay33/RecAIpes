@@ -24,7 +24,7 @@ public class RecipeService {
     private final PdfMetadataRepository pdfMetadataRepository;
     private final OpenAIService openAIService;
     private final PdfService pdfService;
-    private final StorageService storageService; // AJOUTÉ
+    private final StorageService storageService;
 
     private final Map<String, Object> userLocks = new ConcurrentHashMap<>();
 
@@ -87,7 +87,7 @@ public class RecipeService {
         try {
             Recipe recipe = getRecipeById(id);
 
-            // NOUVEAU : Collecter les URLs uniques des fichiers à supprimer
+            // Collecter les URLs uniques des fichiers à supprimer
             Set<String> filesToDelete = new HashSet<>();
 
             if (recipe.getImageUrl() != null && !recipe.getImageUrl().isEmpty()) {
@@ -157,52 +157,177 @@ public class RecipeService {
         return recipeRepository.save(existingRecipe);
     }
 
+    /**
+     * Méthode améliorée pour analyser le texte de recette généré par OpenAI
+     * Cette version utilise des techniques d'extraction plus robustes pour identifier
+     * correctement le titre de la recette plutôt que de simplement prendre la première ligne
+     */
     private Map<String, String> parseRecipeText(String recipeText) {
         System.out.println("Texte complet de la recette:\n" + recipeText);
 
-        Pattern titlePattern = Pattern.compile("(?m)^(.+?)$");
-        Matcher titleMatcher = titlePattern.matcher(recipeText);
-        String title = titleMatcher.find() ? titleMatcher.group(1).trim() : "Recipe";
+        // Extraction du titre avec une logique améliorée
+        String title = extractTitle(recipeText);
 
-        Pattern ingredientsPattern = Pattern.compile("(?si)INGR[ÉE]DIENTS[\\s\\S]*?(?=INSTRUCTIONS|$)");
-        Matcher ingredientsMatcher = ingredientsPattern.matcher(recipeText);
-        String ingredients = "";
+        // Extraction des sections avec des patterns regex plus précis
+        String ingredients = extractSection(recipeText, "INGR[EÉ]DIENTS?", "INSTRUCTIONS|PREPARATION|ÉTAPES");
+        String instructions = extractSection(recipeText, "INSTRUCTIONS?|PREPARATION|ÉTAPES", "DESCRIPTION");
+        String description = extractSection(recipeText, "DESCRIPTION", null);
 
-        if (ingredientsMatcher.find()) {
-            ingredients = ingredientsMatcher.group(0).trim();
-            if (!ingredients.contains("-") && !ingredients.contains("*") && !ingredients.contains("•")) {
-                ingredients = "INGRÉDIENTS\n- 400g de poulet coupé en morceaux\n- 2 cuillères à soupe de curry en poudre\n- 1 cuillère à soupe de miel\n- 1 piment rouge (facultatif)\n- 200g de nouilles de riz\n- 2 cuillères à soupe de sauce soja\n- 2 cuillères à soupe d'huile d'olive\n- Sel et poivre au goût";
-            }
-        } else {
-            ingredients = "INGRÉDIENTS\n- 400g de poulet coupé en morceaux\n- 2 cuillères à soupe de curry en poudre\n- 1 cuillère à soupe de miel\n- 1 piment rouge (facultatif)\n- 200g de nouilles de riz\n- 2 cuillères à soupe de sauce soja\n- 2 cuillères à soupe d'huile d'olive\n- Sel et poivre au goût";
+        // Validation et fallbacks pour garantir qu'on a toujours du contenu valide
+        if (title == null || title.trim().isEmpty()) {
+            title = "Recette Générée";
+            System.out.println("⚠️ Titre extrait vide, utilisation du fallback: " + title);
         }
 
-        Pattern instructionsPattern = Pattern.compile("(?si)INSTRUCTIONS.*?(?=DESCRIPTION|$)");
-        Matcher instructionsMatcher = instructionsPattern.matcher(recipeText);
-        String instructions = instructionsMatcher.find() ? instructionsMatcher.group(0).trim() : "";
+        if (ingredients == null || ingredients.trim().isEmpty()) {
+            ingredients = "INGRÉDIENTS\n- Ingrédients non spécifiés";
+        }
 
-        if (instructions.equalsIgnoreCase("INSTRUCTIONS")) {
+        if (instructions == null || instructions.trim().isEmpty()) {
             instructions = "INSTRUCTIONS\n1. Instructions non spécifiées";
         }
 
-        Pattern descriptionPattern = Pattern.compile("(?si)DESCRIPTION.*$");
-        Matcher descriptionMatcher = descriptionPattern.matcher(recipeText);
-        String description = descriptionMatcher.find() ? descriptionMatcher.group(0).trim() : "";
-
-        if (description.equalsIgnoreCase("DESCRIPTION")) {
+        if (description == null || description.trim().isEmpty()) {
             description = "DESCRIPTION\nAucune description disponible.";
         }
 
-        System.out.println("Titre extrait: " + title);
-        System.out.println("Ingrédients extraits: " + ingredients.substring(0, Math.min(50, ingredients.length())) + "...");
-        System.out.println("Instructions extraites: " + instructions.substring(0, Math.min(50, instructions.length())) + "...");
-        System.out.println("Description extraite: " + description.substring(0, Math.min(50, description.length())) + "...");
+        System.out.println("✅ Titre extrait: '" + title + "'");
+        System.out.println("✅ Ingrédients extraits: " + ingredients.substring(0, Math.min(50, ingredients.length())) + "...");
+        System.out.println("✅ Instructions extraites: " + instructions.substring(0, Math.min(50, instructions.length())) + "...");
+        System.out.println("✅ Description extraite: " + description.substring(0, Math.min(50, description.length())) + "...");
 
         return Map.of(
-                "title", title,
-                "ingredients", ingredients,
-                "instructions", instructions,
-                "description", description
+                "title", title.trim(),
+                "ingredients", ingredients.trim(),
+                "instructions", instructions.trim(),
+                "description", description.trim()
         );
+    }
+
+    /**
+     * Extraction intelligente du titre de la recette
+     * Cette méthode essaie plusieurs patterns pour identifier le vrai titre
+     * plutôt que de simplement prendre la première ligne
+     */
+    private String extractTitle(String recipeText) {
+        if (recipeText == null || recipeText.trim().isEmpty()) {
+            return "Recette Sans Nom";
+        }
+
+        // Patterns pour identifier le titre dans différents formats possibles
+        String[] titlePatterns = {
+                "(?i)^\\s*TITRE\\s*:?\\s*(.+?)$",           // Format: TITRE: Nom de la recette
+                "(?i)^\\s*RECIPE\\s*:?\\s*(.+?)$",          // Format: RECIPE: Nom de la recette
+                "(?i)^\\s*NOM\\s*:?\\s*(.+?)$",             // Format: NOM: Nom de la recette
+                "(?i)^\\s*#\\s*(.+?)$",                     // Format: # Nom de la recette
+                "(?i)^\\s*\\*\\*(.+?)\\*\\*",               // Format: **Nom de la recette**
+                "(?i)^\\s*(.+?)(?=\\n|INGR|DESCRIPTION)"   // Première ligne avant les sections
+        };
+
+        // Essayer chaque pattern pour trouver un titre valide
+        for (String patternStr : titlePatterns) {
+            Pattern pattern = Pattern.compile(patternStr, Pattern.MULTILINE);
+            Matcher matcher = pattern.matcher(recipeText);
+
+            if (matcher.find()) {
+                String candidateTitle = matcher.group(1).trim();
+
+                // Valider que ce candidat est vraiment un titre (pas trop long, pas de mots-clés de section)
+                if (!candidateTitle.isEmpty() &&
+                        candidateTitle.length() <= 200 &&
+                        !candidateTitle.toLowerCase().contains("ingrédient") &&
+                        !candidateTitle.toLowerCase().contains("instruction") &&
+                        !candidateTitle.toLowerCase().contains("description")) {
+
+                    System.out.println("🎯 Titre extrait avec pattern '" + patternStr + "': " + candidateTitle);
+                    return cleanTitle(candidateTitle);
+                }
+            }
+        }
+
+        // Si aucun pattern spécifique n'a fonctionné, chercher la première ligne significative
+        String[] lines = recipeText.split("\\n");
+        for (String line : lines) {
+            String cleanLine = line.trim();
+            if (!cleanLine.isEmpty() &&
+                    cleanLine.length() > 3 &&
+                    cleanLine.length() <= 200 &&
+                    !cleanLine.toLowerCase().startsWith("créé") &&
+                    !cleanLine.toLowerCase().startsWith("voici") &&
+                    !cleanLine.toLowerCase().startsWith("cette")) {
+
+                System.out.println("🎯 Titre extrait depuis première ligne valide: " + cleanLine);
+                return cleanTitle(cleanLine);
+            }
+        }
+
+        System.out.println("⚠️ Aucun titre trouvé, utilisation du fallback");
+        return "Recette Délicieuse";
+    }
+
+    /**
+     * Nettoie et formate le titre extrait pour qu'il soit présentable
+     * Supprime les caractères indésirables et normalise le formatage
+     */
+    private String cleanTitle(String title) {
+        if (title == null) {
+            return "Recette Sans Nom";
+        }
+
+        // Nettoyage des caractères de formatage en début et fin
+        title = title.trim()
+                .replaceAll("^[\\*#\\-\\s]+", "")  // Supprimer *, #, -, espaces en début
+                .replaceAll("[\\*#\\-\\s]+$", "")  // Supprimer *, #, -, espaces en fin
+                .replaceAll("\\s+", " ");          // Normaliser les espaces multiples
+
+        // Capitaliser la première lettre si nécessaire
+        if (!title.isEmpty()) {
+            title = title.substring(0, 1).toUpperCase() +
+                    (title.length() > 1 ? title.substring(1) : "");
+        }
+
+        return title.isEmpty() ? "Recette Sans Nom" : title;
+    }
+
+    /**
+     * Extrait une section spécifique du texte de recette en utilisant des patterns regex
+     * Plus précis que la méthode originale qui pouvait manquer du contenu
+     */
+    private String extractSection(String text, String startPattern, String endPattern) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+
+        try {
+            Pattern pattern;
+
+            // Construire le pattern regex selon qu'on a un pattern de fin ou non
+            if (endPattern != null) {
+                pattern = Pattern.compile(
+                        "(?si)(" + startPattern + ").*?(?=" + endPattern + "|$)",
+                        Pattern.MULTILINE | Pattern.DOTALL
+                );
+            } else {
+                pattern = Pattern.compile(
+                        "(?si)(" + startPattern + ").*$",
+                        Pattern.MULTILINE | Pattern.DOTALL
+                );
+            }
+
+            Matcher matcher = pattern.matcher(text);
+
+            if (matcher.find()) {
+                String section = matcher.group(0).trim();
+
+                // Nettoyer la section en supprimant le header redondant
+                section = section.replaceAll("(?i)^(INGR[EÉ]DIENTS?|INSTRUCTIONS?|PREPARATION|ÉTAPES|DESCRIPTION)\\s*:?\\s*", "");
+
+                return section.trim();
+            }
+        } catch (Exception e) {
+            System.err.println("Erreur lors de l'extraction de section: " + e.getMessage());
+        }
+
+        return "";
     }
 }
