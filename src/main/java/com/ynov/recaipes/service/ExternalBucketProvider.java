@@ -424,7 +424,11 @@ public class ExternalBucketProvider implements StorageProvider {
             headers.setContentType(MediaType.APPLICATION_JSON);
 
             Map<String, Object> requestBody = new HashMap<>();
-            requestBody.put("groupID", groupId);
+
+            // --- MODIFICATION ---
+            // We now use the groupID 6 as requested by the user,
+            // instead of the one from the configuration file.
+            requestBody.put("groupID", 6);
 
             if (tag1 != null && !tag1.isEmpty()) requestBody.put("tag1", tag1);
             if (tag2 != null && !tag2.isEmpty()) requestBody.put("tag2", tag2);
@@ -432,16 +436,16 @@ public class ExternalBucketProvider implements StorageProvider {
 
             HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(requestBody, headers);
 
-            System.out.println("Recherche dans bucket externe avec body JSON: " + requestBody);
+            System.out.println("Recherche publique dans bucket avec body JSON: " + requestBody);
 
             ResponseEntity<Map> response = restTemplate.exchange(
                     searchUrl, HttpMethod.GET, requestEntity, Map.class);
 
             if (response.getStatusCode().is2xxSuccessful()) {
-                System.out.println("Recherche réussie: " + response.getBody());
+                System.out.println("Recherche publique réussie: " + response.getBody());
                 return response.getBody();
             } else {
-                System.err.println("Recherche échouée: " + response.getStatusCode());
+                System.err.println("Recherche publique échouée: " + response.getStatusCode());
                 return Map.of("error", "Search failed with status: " + response.getStatusCode());
             }
 
@@ -450,7 +454,7 @@ public class ExternalBucketProvider implements StorageProvider {
             return Map.of("error", "Search failed: " + e.getMessage());
         }
     }
-
+    
     public Map<String, Object> searchFilesPrivate(String tag1, String tag2, String tag3) {
         if (studentToken == null || studentToken.isEmpty()) {
             return Map.of("error", "Token required for private search");
