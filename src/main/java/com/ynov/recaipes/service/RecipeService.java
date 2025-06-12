@@ -148,19 +148,15 @@ public class RecipeService {
     }
 
     private Map<String, String> parseRecipeText(String recipeText) {
-        System.out.println("Full recipe text:\n" + recipeText);
-
         if (recipeText != null && !recipeText.isEmpty() && recipeText.startsWith("\uFEFF")) {
             recipeText = recipeText.substring(1);
             System.out.println("✅ BOM character removed from the beginning of the text.");
         }
 
-        // The new extractSection method directly returns clean content.
-        // The order of extraction is important and follows the prompt structure: D-I-I
         String title = extractTitle(recipeText);
         String description = extractSection(recipeText, "DESCRIPTION", "INGREDIENTS");
         String ingredients = extractSection(recipeText, "INGR[EÉ]DIENTS?", "INSTRUCTIONS|PREPARATION|ÉTAPES");
-        String instructions = extractSection(recipeText, "INSTRUCTIONS?|PREPARATION|ÉTAPES", null); // null means it goes to the end of the text
+        String instructions = extractSection(recipeText, "INSTRUCTIONS?|PREPARATION|ÉTAPES", null);
 
         final int MIN_INGREDIENTS_LENGTH = 15;
         final int MIN_INSTRUCTIONS_LENGTH = 25;
@@ -194,7 +190,7 @@ public class RecipeService {
                 "(?i)^\\s*NOM\\s*:?\\s*(.+?)$",
                 "(?i)^\\s*#\\s*(.+?)$",
                 "(?i)^\\s*\\*\\*(.+?)\\*\\*",
-                "(?i)^\\s*(.+?)(?=\\n|DESCRIPTION|INGR)" // Look for next section
+                "(?i)^\\s*(.+?)(?=\\n|DESCRIPTION|INGR)"
         };
         for (String patternStr : titlePatterns) {
             Pattern pattern = Pattern.compile(patternStr, Pattern.MULTILINE);
@@ -210,18 +206,6 @@ public class RecipeService {
                 }
             }
         }
-        String[] lines = recipeText.split("\\n");
-        for (String line : lines) {
-            String cleanLine = line.trim();
-            if (!cleanLine.isEmpty() && cleanLine.length() > 3 && cleanLine.length() <= 200 &&
-                    !cleanLine.toLowerCase().startsWith("créé") &&
-                    !cleanLine.toLowerCase().startsWith("voici") &&
-                    !cleanLine.toLowerCase().startsWith("cette")) {
-                System.out.println("🎯 Title extracted from first valid line: " + cleanLine);
-                return cleanTitle(cleanLine);
-            }
-        }
-        System.out.println("⚠️ No title found, using fallback");
         return "Delicious Recipe";
     }
 
@@ -254,7 +238,7 @@ public class RecipeService {
 
     /**
      * Extracts the content between a start pattern and an end pattern (or end of text).
-     * This new version directly captures the content, making the process more robust.
+     * This version is corrected to handle regex groups properly and avoid NullPointerException.
      * @param text The full text to search in.
      * @param startPattern The keyword that marks the beginning of the section (e.g., "INGREDIENTS").
      * @param endPattern The keyword that marks the beginning of the *next* section. If null, extracts to the end.
@@ -266,27 +250,27 @@ public class RecipeService {
         }
         try {
             String regex;
-            // The (?s) flag allows '.' to match newline characters.
+            // The startPattern must be grouped to handle the '|' OR operator correctly.
+            // The content is now in the second capturing group.
             if (endPattern != null) {
-                // This regex captures the content *between* the start and end patterns.
-                // It looks for the start pattern, consumes the header, and then captures everything (group 1)
-                // until it sees the end pattern (without consuming it).
-                regex = "(?i)" + startPattern + "\\s*:?\\s*\\n?(.*?)(?=" + endPattern + "|$)";
+                regex = "(?i)(" + startPattern + ")\\s*:?\\s*\\n?(.*?)(?=" + endPattern + "|$)";
             } else {
-                // This captures content from the start pattern to the very end of the string.
-                regex = "(?i)" + startPattern + "\\s*:?\\s*\\n?(.*)";
+                regex = "(?i)(" + startPattern + ")\\s*:?\\s*\\n?(.*)";
             }
 
             Pattern pattern = Pattern.compile(regex, Pattern.DOTALL);
             Matcher matcher = pattern.matcher(text);
 
             if (matcher.find()) {
-                // We return group(1), which is the content captured by (.*?), not the full match.
-                return matcher.group(1).trim();
+                // The content is in group 2. Group 1 is the matched startPattern keyword (e.g., "INGREDIENTS").
+                String content = matcher.group(2);
+                if (content != null) {
+                    return content.trim();
+                }
             }
         } catch (Exception e) {
             System.err.println("Error extracting section with startPattern '" + startPattern + "': " + e.getMessage());
         }
-        return "";
+        return ""; // Return empty string if not found or if content is null
     }
 }
