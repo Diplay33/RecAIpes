@@ -3,7 +3,6 @@ package com.ynov.recaipes.service;
 import com.ynov.recaipes.dto.RecipeRequest;
 import com.ynov.recaipes.model.Recipe;
 import com.ynov.recaipes.model.PdfMetadata;
-import com.ynov.recaipes.model.RecipeTag;
 import com.ynov.recaipes.repository.RecipeRepository;
 import com.ynov.recaipes.repository.PdfMetadataRepository;
 import lombok.RequiredArgsConstructor;
@@ -39,14 +38,14 @@ public class RecipeService {
                     Recipe mostRecent = recentRecipes.get(0);
                     if (ChronoUnit.SECONDS.between(mostRecent.getCreatedAt(), LocalDateTime.now()) < 60 &&
                             mostRecent.getTitle().toLowerCase().contains(request.getDishName().toLowerCase())) {
-                        System.out.println("Réutilisation d'une recette récente: " + mostRecent.getId());
+                        System.out.println("Reusing a recent recipe: " + mostRecent.getId());
                         return mostRecent;
                     }
                 }
 
                 String recipeText = openAIService.generateRecipeText(request.getDishName());
+                System.out.println("Recipe generated: \n" + recipeText);
 
-                System.out.println("Recette générée : \n" + recipeText);
                 Map<String, String> parsedRecipe = parseRecipeText(recipeText);
 
                 Recipe recipe = new Recipe();
@@ -65,7 +64,7 @@ public class RecipeService {
                 recipe.setPdfUrl(pdfMetadata.getS3Url());
 
                 String requestId = UUID.randomUUID().toString();
-                System.out.println("Recette générée avec succès: " + recipe.getId() + " (request ID: " + requestId + ")");
+                System.out.println("Recipe generated successfully: " + recipe.getId() + " (request ID: " + requestId + ")");
 
                 return recipeRepository.save(recipe);
             } catch (Exception e) {
@@ -86,47 +85,36 @@ public class RecipeService {
     public void deleteRecipe(Long id) {
         try {
             Recipe recipe = getRecipeById(id);
-
-            // Collecter les URLs uniques des fichiers à supprimer
             Set<String> filesToDelete = new HashSet<>();
-
             if (recipe.getImageUrl() != null && !recipe.getImageUrl().isEmpty()) {
                 filesToDelete.add(recipe.getImageUrl());
             }
-
             if (recipe.getPdfUrl() != null && !recipe.getPdfUrl().isEmpty()) {
                 filesToDelete.add(recipe.getPdfUrl());
             }
 
-            // 1. Supprimer manuellement les métadonnées PDF d'abord
             PdfMetadata pdfMetadata = pdfMetadataRepository.findByRecipeId(id);
             if (pdfMetadata != null) {
-                System.out.println("Suppression des métadonnées PDF: " + pdfMetadata.getId());
-
-                // Ajouter l'URL S3 et le chemin local à la liste de suppression
+                System.out.println("Deleting PDF metadata: " + pdfMetadata.getId());
                 if (pdfMetadata.getS3Url() != null && !pdfMetadata.getS3Url().isEmpty()) {
                     filesToDelete.add(pdfMetadata.getS3Url());
                 }
                 if (pdfMetadata.getLocalPath() != null && !pdfMetadata.getLocalPath().isEmpty()) {
                     filesToDelete.add("file://" + pdfMetadata.getLocalPath());
                 }
-
                 pdfMetadataRepository.delete(pdfMetadata);
             }
 
-            // 2. Supprimer la recette de la base de données
             recipeRepository.delete(recipe);
 
-            // 3. Supprimer les fichiers du stockage
             if (!filesToDelete.isEmpty()) {
-                Map<String, Boolean> deletionResults = storageService.deleteFiles(new ArrayList<>(filesToDelete));
+                storageService.deleteFiles(new ArrayList<>(filesToDelete));
             }
 
-            System.out.println("✅ Recette supprimée avec succès: " + id);
-
+            System.out.println("✅ Recipe deleted successfully: " + id);
         } catch (Exception e) {
-            System.err.println("❌ Erreur lors de la suppression de la recette " + id + ": " + e.getMessage());
-            throw new RuntimeException("Impossible de supprimer la recette: " + e.getMessage(), e);
+            System.err.println("❌ Error deleting recipe " + id + ": " + e.getMessage());
+            throw new RuntimeException("Could not delete recipe: " + e.getMessage(), e);
         }
     }
 
@@ -146,60 +134,59 @@ public class RecipeService {
 
     public Recipe updateRecipe(Long id, RecipeRequest request) {
         Recipe existingRecipe = getRecipeById(id);
-
         if (request.getDishName() != null && !request.getDishName().isEmpty()) {
             existingRecipe.setTitle(request.getDishName());
         }
         if (request.getUserName() != null && !request.getUserName().isEmpty()) {
             existingRecipe.setCreatedBy(request.getUserName());
         }
-
         return recipeRepository.save(existingRecipe);
     }
 
     /**
-     * Méthode améliorée pour analyser le texte de recette généré par OpenAI
-     * Cette version utilise des techniques d'extraction plus robustes pour identifier
-     * correctement le titre de la recette plutôt que de simplement prendre la première ligne
+     * This is the core method for parsing and cleaning the raw text from OpenAI.
+     * It's designed to be robust against common AI formatting inconsistencies.
      */
     private Map<String, String> parseRecipeText(String recipeText) {
-        System.out.println("Texte complet de la recette:\n" + recipeText);
+        System.out.println("Full recipe text:\n" + recipeText);
 
-        // Extraction du titre avec une logique améliorée
+        // --- ROBUST FIX ---
+        // First, sanitize the input by removing any potential invisible leading characters
+        // like a Byte Order Mark (BOM) that can prevent regex patterns from matching
+        // at the beginning of the string (using the '^' anchor).
+        if (recipeText != null && !recipeText.isEmpty() && recipeText.startsWith("\uFEFF")) {
+            recipeText = recipeText.substring(1);
+            System.out.println("✅ BOM character removed from the beginning of the text.");
+        }
+        // --- END OF FIX ---
+
         String title = extractTitle(recipeText);
-
-        // Extraction des sections avec la méthode originale qui fonctionne
         String ingredients = extractSection(recipeText, "INGR[EÉ]DIENTS?", "INSTRUCTIONS|PREPARATION|ÉTAPES");
         String instructions = extractSection(recipeText, "INSTRUCTIONS?|PREPARATION|ÉTAPES", "DESCRIPTION");
         String description = extractSection(recipeText, "DESCRIPTION", null);
 
-        // Validation et fallbacks pour garantir qu'on a toujours du contenu valide
         if (title == null || title.trim().isEmpty()) {
-            title = "Recette Générée";
-            System.out.println("⚠️ Titre extrait vide, utilisation du fallback: " + title);
+            title = "Generated Recipe";
+            System.out.println("⚠️ Extracted title is empty, using fallback: " + title);
         }
-
         if (ingredients == null || ingredients.trim().isEmpty()) {
-            ingredients = "- Ingrédients non spécifiés";
+            ingredients = "- Ingredients not specified";
         }
-
         if (instructions == null || instructions.trim().isEmpty()) {
-            instructions = "1. Instructions non spécifiées";
+            instructions = "1. Instructions not specified";
         }
-
         if (description == null || description.trim().isEmpty()) {
-            description = "Aucune description disponible.";
+            description = "No description available.";
         }
 
-        // Nettoyer les préfixes après extraction
         ingredients = cleanSectionText(ingredients, "INGR[EÉ]DIENTS?");
         instructions = cleanSectionText(instructions, "INSTRUCTIONS?|PREPARATION|ÉTAPES");
         description = cleanDescription(description);
 
-        System.out.println("✅ Titre extrait: '" + title + "'");
-        System.out.println("✅ Ingrédients extraits: " + ingredients.substring(0, Math.min(50, ingredients.length())) + "...");
-        System.out.println("✅ Instructions extraites: " + instructions.substring(0, Math.min(50, instructions.length())) + "...");
-        System.out.println("✅ Description extraite: " + description.substring(0, Math.min(50, description.length())) + "...");
+        System.out.println("✅ Extracted Title: '" + title + "'");
+        System.out.println("✅ Extracted Ingredients: " + ingredients.substring(0, Math.min(50, ingredients.length())) + "...");
+        System.out.println("✅ Extracted Instructions: " + instructions.substring(0, Math.min(50, instructions.length())) + "...");
+        System.out.println("✅ Extracted Description: " + description.substring(0, Math.min(50, description.length())) + "...");
 
         return Map.of(
                 "title", cleanTitle(title),
@@ -210,126 +197,95 @@ public class RecipeService {
     }
 
     /**
-     * Extraction intelligente du titre de la recette
-     * Cette méthode essaie plusieurs patterns pour identifier le vrai titre
-     * plutôt que de simplement prendre la première ligne
+     * Intelligently extracts the recipe title using multiple patterns.
      */
     private String extractTitle(String recipeText) {
         if (recipeText == null || recipeText.trim().isEmpty()) {
-            return "Recette Sans Nom";
+            return "Recipe Without Name";
         }
-
-        // Patterns pour identifier le titre dans différents formats possibles
         String[] titlePatterns = {
-                "(?i)^\\s*TITRE\\s*:?\\s*(.+?)$",           // Format: TITRE: Nom de la recette
-                "(?i)^\\s*RECIPE\\s*:?\\s*(.+?)$",          // Format: RECIPE: Nom de la recette
-                "(?i)^\\s*NOM\\s*:?\\s*(.+?)$",             // Format: NOM: Nom de la recette
-                "(?i)^\\s*#\\s*(.+?)$",                     // Format: # Nom de la recette
-                "(?i)^\\s*\\*\\*(.+?)\\*\\*",               // Format: **Nom de la recette**
-                "(?i)^\\s*(.+?)(?=\\n|INGR|DESCRIPTION)"   // Première ligne avant les sections
+                "(?i)^\\s*TITRE\\s*:?\\s*(.+?)$",
+                "(?i)^\\s*RECIPE\\s*:?\\s*(.+?)$",
+                "(?i)^\\s*NOM\\s*:?\\s*(.+?)$",
+                "(?i)^\\s*#\\s*(.+?)$",
+                "(?i)^\\s*\\*\\*(.+?)\\*\\*",
+                "(?i)^\\s*(.+?)(?=\\n|INGR|DESCRIPTION)"
         };
-
-        // Essayer chaque pattern pour trouver un titre valide
         for (String patternStr : titlePatterns) {
             Pattern pattern = Pattern.compile(patternStr, Pattern.MULTILINE);
             Matcher matcher = pattern.matcher(recipeText);
-
             if (matcher.find()) {
                 String candidateTitle = matcher.group(1).trim();
-
-                // Valider que ce candidat est vraiment un titre (pas trop long, pas de mots-clés de section)
-                if (!candidateTitle.isEmpty() &&
-                        candidateTitle.length() <= 200 &&
-                        !candidateTitle.toLowerCase().contains("ingrédient") &&
+                if (!candidateTitle.isEmpty() && candidateTitle.length() <= 200 &&
+                        !candidateTitle.toLowerCase().contains("ingredient") &&
                         !candidateTitle.toLowerCase().contains("instruction") &&
                         !candidateTitle.toLowerCase().contains("description")) {
-
-                    System.out.println("🎯 Titre extrait avec pattern '" + patternStr + "': " + candidateTitle);
+                    System.out.println("🎯 Title extracted with pattern '" + patternStr + "': " + candidateTitle);
                     return cleanTitle(candidateTitle);
                 }
             }
         }
-
-        // Si aucun pattern spécifique n'a fonctionné, chercher la première ligne significative
         String[] lines = recipeText.split("\\n");
         for (String line : lines) {
             String cleanLine = line.trim();
-            if (!cleanLine.isEmpty() &&
-                    cleanLine.length() > 3 &&
-                    cleanLine.length() <= 200 &&
+            if (!cleanLine.isEmpty() && cleanLine.length() > 3 && cleanLine.length() <= 200 &&
                     !cleanLine.toLowerCase().startsWith("créé") &&
                     !cleanLine.toLowerCase().startsWith("voici") &&
                     !cleanLine.toLowerCase().startsWith("cette")) {
-
-                System.out.println("🎯 Titre extrait depuis première ligne valide: " + cleanLine);
+                System.out.println("🎯 Title extracted from first valid line: " + cleanLine);
                 return cleanTitle(cleanLine);
             }
         }
-
-        System.out.println("⚠️ Aucun titre trouvé, utilisation du fallback");
-        return "Recette Délicieuse";
+        System.out.println("⚠️ No title found, using fallback");
+        return "Delicious Recipe";
     }
 
     /**
-     * Nettoie et formate le titre extrait pour qu'il soit présentable
-     * Supprime les caractères indésirables et normalise le formatage
+     * Cleans and formats the extracted title by removing unwanted prefixes.
      */
     private String cleanTitle(String title) {
         if (title == null) {
-            return "Recette Sans Nom";
+            return "Recipe Without Name";
         }
-
-        // Supprimer les préfixes courants d'OpenAI (insensible à la casse)
+        // This regex removes common OpenAI prefixes, case-insensitively.
         title = title.trim()
-                .replaceAll("(?i)^(TITLE|TITRE)\\s*:?\\s*", "")
-                .replaceAll("(?i)^(RECIPE|RECETTE)\\s*:?\\s*", "")
-                .replaceAll("(?i)^(NOM)\\s*:?\\s*", "")
-                .replaceAll("^[\\*#\\-\\s]+", "")  // Supprimer *, #, -, espaces en début
-                .replaceAll("[\\*#\\-\\s]+$", "")  // Supprimer *, #, -, espaces en fin
-                .replaceAll("\\s+", " ");          // Normaliser les espaces multiples
-
-        // Capitaliser la première lettre si nécessaire
+                .replaceAll("(?i)^(TITLE|TITRE|RECIPE|RECETTE|NOM)\\s*:?\\s*", "")
+                .replaceAll("^[\\*#\\-\\s]+", "")
+                .replaceAll("[\\*#\\-\\s]+$", "")
+                .replaceAll("\\s+", " ");
         if (!title.isEmpty()) {
-            title = title.substring(0, 1).toUpperCase() +
-                    (title.length() > 1 ? title.substring(1) : "");
+            title = title.substring(0, 1).toUpperCase() + (title.length() > 1 ? title.substring(1) : "");
         }
-
-        return title.isEmpty() ? "Recette Sans Nom" : title;
+        return title.isEmpty() ? "Recipe Without Name" : title;
     }
 
+    /**
+     * Cleans the description text, removing unwanted prefixes.
+     */
     private String cleanDescription(String description) {
         if (description == null || description.trim().isEmpty()) {
-            return "Aucune description disponible.";
+            return "No description available.";
         }
-
-        // Supprimer les préfixes courants d'OpenAI (insensible à la casse)
         description = description.trim()
-                .replaceAll("(?i)^(DESCRIPTION)\\s*:?\\s*", "")
-                .replaceAll("(?i)^(DESC)\\s*:?\\s*", "")
-                .replaceAll("^:+\\s*", "")  // Supprimer les ":" au début
+                .replaceAll("(?i)^(DESCRIPTION|DESC)\\s*:?\\s*", "")
+                .replaceAll("^:+\\s*", "")
                 .trim();
-
-        // Limiter à 950 caractères pour éviter l'erreur DB (limite 1000)
         if (description.length() > 950) {
             description = description.substring(0, 947) + "...";
-            System.out.println("⚠️ Description tronquée à 950 caractères");
+            System.out.println("⚠️ Description truncated to 950 characters");
         }
-
-        return description.isEmpty() ? "Aucune description disponible." : description;
+        return description.isEmpty() ? "No description available." : description;
     }
+
     /**
-     * Extrait une section spécifique du texte de recette en utilisant des patterns regex
-     * Plus précis que la méthode originale qui pouvait manquer du contenu
+     * Extracts a specific section (e.g., ingredients, instructions) from the recipe text.
      */
     private String extractSection(String text, String startPattern, String endPattern) {
         if (text == null || text.isEmpty()) {
             return "";
         }
-
         try {
             Pattern pattern;
-
-            // Construire le pattern regex selon qu'on a un pattern de fin ou non
             if (endPattern != null) {
                 pattern = Pattern.compile(
                         "(?si)(" + startPattern + ").*?(?=" + endPattern + "|$)",
@@ -341,45 +297,33 @@ public class RecipeService {
                         Pattern.MULTILINE | Pattern.DOTALL
                 );
             }
-
             Matcher matcher = pattern.matcher(text);
-
             if (matcher.find()) {
-                String section = matcher.group(0).trim();
-                return section;
+                return matcher.group(0).trim();
             }
         } catch (Exception e) {
-            System.err.println("Erreur lors de l'extraction de section: " + e.getMessage());
+            System.err.println("Error extracting section: " + e.getMessage());
         }
-
         return "";
     }
 
     /**
-     * Nettoie une section extraite en supprimant les préfixes indésirables
+     * Cleans an extracted section by removing its header (e.g., "INGREDIENTS:").
      */
     private String cleanSectionText(String text, String... prefixes) {
         if (text == null || text.isEmpty()) {
             return "";
         }
-
-        // Supprimer SEULEMENT le header redondant au début (une seule fois)
         for (String prefix : prefixes) {
             if (prefix != null) {
-                // Pattern pour supprimer uniquement le header au tout début
                 String pattern = "(?i)^(" + prefix + ")\\s*:?\\s*\\n?";
                 text = text.replaceFirst(pattern, "").trim();
             }
         }
-
-        // Nettoyer les ":" isolés uniquement au tout début
         text = text.replaceAll("^:+\\s*", "").trim();
-
-        // Si le texte commence par des sauts de ligne + ":", les supprimer
         if (text.startsWith("\n:") || text.startsWith(": ")) {
             text = text.replaceFirst("^\\n?:\\s*", "").trim();
         }
-
         return text;
     }
 }
