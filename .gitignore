@@ -37,3 +37,4 @@ target/
 .idea/
 *.iml
 pdfs/
+*.class
