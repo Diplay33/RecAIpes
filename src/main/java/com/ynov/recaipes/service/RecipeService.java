@@ -168,7 +168,7 @@ public class RecipeService {
         // Extraction du titre avec une logique améliorée
         String title = extractTitle(recipeText);
 
-        // Extraction des sections avec des patterns regex plus précis
+        // Extraction des sections avec la méthode originale qui fonctionne
         String ingredients = extractSection(recipeText, "INGR[EÉ]DIENTS?", "INSTRUCTIONS|PREPARATION|ÉTAPES");
         String instructions = extractSection(recipeText, "INSTRUCTIONS?|PREPARATION|ÉTAPES", "DESCRIPTION");
         String description = extractSection(recipeText, "DESCRIPTION", null);
@@ -180,16 +180,21 @@ public class RecipeService {
         }
 
         if (ingredients == null || ingredients.trim().isEmpty()) {
-            ingredients = "INGRÉDIENTS\n- Ingrédients non spécifiés";
+            ingredients = "- Ingrédients non spécifiés";
         }
 
         if (instructions == null || instructions.trim().isEmpty()) {
-            instructions = "INSTRUCTIONS\n1. Instructions non spécifiées";
+            instructions = "1. Instructions non spécifiées";
         }
 
         if (description == null || description.trim().isEmpty()) {
-            description = "DESCRIPTION\nAucune description disponible.";
+            description = "Aucune description disponible.";
         }
+
+        // Nettoyer les préfixes après extraction
+        ingredients = cleanSectionText(ingredients, "INGR[EÉ]DIENTS?");
+        instructions = cleanSectionText(instructions, "INSTRUCTIONS?|PREPARATION|ÉTAPES");
+        description = cleanDescription(description);
 
         System.out.println("✅ Titre extrait: '" + title + "'");
         System.out.println("✅ Ingrédients extraits: " + ingredients.substring(0, Math.min(50, ingredients.length())) + "...");
@@ -197,7 +202,7 @@ public class RecipeService {
         System.out.println("✅ Description extraite: " + description.substring(0, Math.min(50, description.length())) + "...");
 
         return Map.of(
-                "title", title.trim(),
+                "title", cleanTitle(title),
                 "ingredients", ingredients.trim(),
                 "instructions", instructions.trim(),
                 "description", description.trim()
@@ -274,8 +279,11 @@ public class RecipeService {
             return "Recette Sans Nom";
         }
 
-        // Nettoyage des caractères de formatage en début et fin
+        // Supprimer les préfixes courants d'OpenAI (insensible à la casse)
         title = title.trim()
+                .replaceAll("(?i)^(TITLE|TITRE)\\s*:?\\s*", "")
+                .replaceAll("(?i)^(RECIPE|RECETTE)\\s*:?\\s*", "")
+                .replaceAll("(?i)^(NOM)\\s*:?\\s*", "")
                 .replaceAll("^[\\*#\\-\\s]+", "")  // Supprimer *, #, -, espaces en début
                 .replaceAll("[\\*#\\-\\s]+$", "")  // Supprimer *, #, -, espaces en fin
                 .replaceAll("\\s+", " ");          // Normaliser les espaces multiples
@@ -289,6 +297,26 @@ public class RecipeService {
         return title.isEmpty() ? "Recette Sans Nom" : title;
     }
 
+    private String cleanDescription(String description) {
+        if (description == null || description.trim().isEmpty()) {
+            return "Aucune description disponible.";
+        }
+
+        // Supprimer les préfixes courants d'OpenAI (insensible à la casse)
+        description = description.trim()
+                .replaceAll("(?i)^(DESCRIPTION)\\s*:?\\s*", "")
+                .replaceAll("(?i)^(DESC)\\s*:?\\s*", "")
+                .replaceAll("^:+\\s*", "")  // Supprimer les ":" au début
+                .trim();
+
+        // Limiter à 950 caractères pour éviter l'erreur DB (limite 1000)
+        if (description.length() > 950) {
+            description = description.substring(0, 947) + "...";
+            System.out.println("⚠️ Description tronquée à 950 caractères");
+        }
+
+        return description.isEmpty() ? "Aucune description disponible." : description;
+    }
     /**
      * Extrait une section spécifique du texte de recette en utilisant des patterns regex
      * Plus précis que la méthode originale qui pouvait manquer du contenu
@@ -318,16 +346,40 @@ public class RecipeService {
 
             if (matcher.find()) {
                 String section = matcher.group(0).trim();
-
-                // Nettoyer la section en supprimant le header redondant
-                section = section.replaceAll("(?i)^(INGR[EÉ]DIENTS?|INSTRUCTIONS?|PREPARATION|ÉTAPES|DESCRIPTION)\\s*:?\\s*", "");
-
-                return section.trim();
+                return section;
             }
         } catch (Exception e) {
             System.err.println("Erreur lors de l'extraction de section: " + e.getMessage());
         }
 
         return "";
+    }
+
+    /**
+     * Nettoie une section extraite en supprimant les préfixes indésirables
+     */
+    private String cleanSectionText(String text, String... prefixes) {
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+
+        // Supprimer SEULEMENT le header redondant au début (une seule fois)
+        for (String prefix : prefixes) {
+            if (prefix != null) {
+                // Pattern pour supprimer uniquement le header au tout début
+                String pattern = "(?i)^(" + prefix + ")\\s*:?\\s*\\n?";
+                text = text.replaceFirst(pattern, "").trim();
+            }
+        }
+
+        // Nettoyer les ":" isolés uniquement au tout début
+        text = text.replaceAll("^:+\\s*", "").trim();
+
+        // Si le texte commence par des sauts de ligne + ":", les supprimer
+        if (text.startsWith("\n:") || text.startsWith(": ")) {
+            text = text.replaceFirst("^\\n?:\\s*", "").trim();
+        }
+
+        return text;
     }
 }
