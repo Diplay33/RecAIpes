@@ -67,6 +67,7 @@ public class ExternalBucketProvider implements StorageProvider {
             body.add("tag1", "recipe");
             body.add("tag2", recipeName);
             body.add("tag3", getCurrentDateWithTime());
+            body.add("generateThumbnail", true);
 
             HttpEntity<MultiValueMap<String, Object>> requestEntity =
                     new HttpEntity<>(body, headers);
