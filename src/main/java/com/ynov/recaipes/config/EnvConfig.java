@@ -29,7 +29,12 @@ public class EnvConfig {
         if (dotenv.get("AWS_SECRET_ACCESS_KEY") != null) {
             System.setProperty("AWS_SECRET_ACCESS_KEY", dotenv.get("AWS_SECRET_ACCESS_KEY"));
         }
-
+        if (dotenv.get("API_SECRET_KEY") != null) {
+            System.setProperty("api.secret.key", dotenv.get("API_SECRET_KEY"));
+            System.out.println("✅ Clé API Secrète chargée.");
+        } else {
+            System.out.println("⚠️ Clé API Secrète non trouvée dans .env");
+        }
         if (dotenv.get("STUDENT_TOKEN") != null) {
             System.setProperty("STUDENT_TOKEN", dotenv.get("STUDENT_TOKEN"));
             System.out.println("✅ Token étudiant chargé depuis .env");
