@@ -19,18 +19,16 @@ public class RecipeController {
 
     private final RecipeService recipeService;
 
+
     /**
      * Créer/Générer une nouvelle recette
      */
     @PostMapping
     public ResponseEntity<RecipeResponse> generateRecipe(@RequestBody RecipeRequest request) {
-        try {
-            Recipe recipe = recipeService.generateRecipe(request);
-            return ResponseEntity.ok(mapToResponse(recipe));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
-        }
+        Recipe recipe = recipeService.generateRecipe(request);
+        return ResponseEntity.ok(mapToResponse(recipe));
     }
+
 
     /**
      * Obtenir toutes les recettes
